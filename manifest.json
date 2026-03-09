@@ -23,6 +23,20 @@
       ]
     },
     {
+  "id": "filmmodu",
+  "name": "FilmModu",
+  "description": "Türkçe dublaj ve altyazılı full HD filmler.",
+  "version": "1.0.0",
+  "author": "senin-adin",
+  "supportedTypes": ["movie"],
+  "filename": "providers/filmmodu.js",
+  "enabled": true,
+  "logo": "https://filmmodu.rip/wp-content/uploads/2023/07/logo.png",
+  "contentLanguage": ["tr"],
+  "formats": ["mkv", "mp4"],
+  "limited": false
+},
+    {
       "id": "animekai",
       "name": "AnimeKai",
       "description": "AnimeKai TV episodes via AnimeKai servers",
