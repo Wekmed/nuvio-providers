@@ -129,21 +129,29 @@ function fetchFilmLinks(filmUrl) {
 function pixeldrainToStream(pdUrl) {
   var fileId = pdUrl.split('/u/').pop().split('?')[0];
   var directUrl = 'https://pixeldrain.com/api/file/' + fileId + '?download';
+  var infoUrl   = 'https://pixeldrain.com/api/file/' + fileId + '/info';
 
-  return fetch('https://pixeldrain.com/api/file/' + fileId + '/info')
+  return fetch(infoUrl)
     .then(function(r) { return r.ok ? r.json() : null; })
     .then(function(info) {
-      var name = (info && info.name) || '';
-      var quality = 'Auto';
-      if (/2160p|4k/i.test(name))  quality = '4K';
-      else if (/1080p/i.test(name)) quality = '1080p';
-      else if (/720p/i.test(name))  quality = '720p';
-      else if (/480p/i.test(name))  quality = '480p';
-      console.log('[JetFilmizle] Pixeldrain kalite: ' + quality + ' (' + name + ')');
+      var name  = (info && info.name)  || '';
+      var size  = (info && info.size)  || 0;  // bytes
+      var quality;
+      // Önce dosya adına bak
+      if      (/2160p|4k/i.test(name))  quality = '4K';
+      else if (/1080p/i.test(name))     quality = '1080p';
+      else if (/720p/i.test(name))      quality = '720p';
+      else if (/480p/i.test(name))      quality = '480p';
+      // Dosya adında bilgi yoksa boyuta göre tahmin et
+      else if (size > 3 * 1024 * 1024 * 1024) quality = '1080p'; // >3GB
+      else if (size > 1 * 1024 * 1024 * 1024) quality = '720p';  // >1GB
+      else if (size > 0)                       quality = '480p';
+      else                                     quality = 'Auto';
+      console.log('[JetFilmizle] Pixeldrain: ' + quality + ' | ' + name + ' | ' + Math.round(size/1024/1024) + 'MB');
       return {
         url:     directUrl,
         quality: quality,
-        label:   'JetFilmizle — Pixeldrain ' + quality,
+        label:   'JetFilmizle — TR Dublaj ' + quality,
         headers: { 'Referer': 'https://pixeldrain.com/' }
       };
     })
@@ -151,7 +159,7 @@ function pixeldrainToStream(pdUrl) {
       return {
         url:     directUrl,
         quality: 'Auto',
-        label:   'JetFilmizle — Pixeldrain',
+        label:   'JetFilmizle — TR Dublaj',
         headers: { 'Referer': 'https://pixeldrain.com/' }
       };
     });
@@ -182,11 +190,48 @@ function getStreams(tmdbId, mediaType, season, episode) {
       return fetchFilmLinks(filmUrl);
     })
     .then(function(links) {
-      var streams = [], promises = [];
-      links.forEach(function(link) {
-        if (link.type === 'pixeldrain') {
-          promises.push(pixeldrainToStream(link.url).then(function(s) { if (s) streams.push(s); }));
-        } else if (link.type === 'iframe') {
+      var pdLinks = links.filter(function(l) { return l.type === 'pixeldrain'; });
+      var otherLinks = links.filter(function(l) { return l.type !== 'pixeldrain'; });
+
+      // Tüm pixeldrain linklerinin boyutunu çek, büyükten küçüğe sırala
+      var pdPromise = Promise.all(pdLinks.map(function(link) {
+        var fileId = link.url.split('/u/').pop().split('?')[0];
+        return fetch('https://pixeldrain.com/api/file/' + fileId + '/info')
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .then(function(info) {
+            return {
+              url:  link.url,
+              size: (info && info.size) || 0,
+              name: (info && info.name) || ''
+            };
+          })
+          .catch(function() { return { url: link.url, size: 0, name: '' }; });
+      })).then(function(pdInfos) {
+        // Boyuta göre büyükten küçüğe sırala
+        pdInfos.sort(function(a, b) { return b.size - a.size; });
+        var qualities = ['1080p', '720p', '480p', '360p'];
+        return pdInfos.map(function(info, idx) {
+          var fileId = info.url.split('/u/').pop().split('?')[0];
+          // Dosya adında kalite bilgisi varsa onu kullan, yoksa sıraya göre ata
+          var quality;
+          if      (/2160p|4k/i.test(info.name))  quality = '4K';
+          else if (/1080p/i.test(info.name))      quality = '1080p';
+          else if (/720p/i.test(info.name))       quality = '720p';
+          else if (/480p/i.test(info.name))       quality = '480p';
+          else quality = qualities[idx] || 'Auto';
+          console.log('[JetFilmizle] #' + (idx+1) + ' ' + quality + ' | ' + Math.round(info.size/1024/1024) + 'MB | ' + info.name);
+          return {
+            url:     'https://pixeldrain.com/api/file/' + fileId + '?download',
+            quality: quality,
+            label:   'JetFilmizle — TR Dublaj ' + quality,
+            headers: { 'Referer': 'https://pixeldrain.com/' }
+          };
+        });
+      });
+
+      var streams = [], promises = [pdPromise.then(function(ss) { ss.forEach(function(s) { streams.push(s); }); })];
+      otherLinks.forEach(function(link) {
+        if (link.type === 'iframe') {
           promises.push(fetchIframeStream(link.url).then(function(s) { if (s) streams.push(s); }));
         }
       });
