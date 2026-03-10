@@ -17,6 +17,21 @@
   "limited": false,
   "disabledPlatforms": []
 },
+{
+  "id": "sezonlukdizi",
+  "name": "SezonlukDizi",
+  "description": "Türkçe dublaj ve altyazılı diziler. sezonlukdizi8.com üzerinden stream sağlar.",
+  "version": "1.0.0",
+  "author": "port: @keyiflerolsun / nuvio: Wekmed",
+  "supportedTypes": ["tv"],
+  "filename": "providers/sezonlukdizi.js",
+  "enabled": true,
+  "logo": "https://sezonlukdizi8.com/images/logo.png",
+  "contentLanguage": ["tr"],
+  "formats": ["mp4", "mkv"],
+  "limited": false,
+  "disabledPlatforms": []
+},
     {
       "id": "4khdhub",
       "name": "4KHDHub",
