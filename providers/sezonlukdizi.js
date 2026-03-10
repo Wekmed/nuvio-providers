@@ -135,6 +135,7 @@ function fetchAlternatifler(bid, dil, aspData) {
   })
     .then(function(r) { return r.text(); })
     .then(function(text) {
+      console.log('[SezonlukDizi] Alternatif ham yanıt (dil=' + dil + '): ' + text.slice(0, 500));
       try {
         var json = JSON.parse(text);
         if (json.status === 'success' && Array.isArray(json.data)) {
@@ -291,4 +292,4 @@ function getStreams(tmdbId, mediaType, season, episode) {
 }
 
 module.exports = { getStreams: getStreams };
-          
+
