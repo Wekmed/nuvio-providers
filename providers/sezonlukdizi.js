@@ -89,10 +89,10 @@ function findBestMatch(results, searchTitle) {
 }
 
 // ── Dizi sayfasından endpoint al ─────────────────────────────
-// URL formatı: https://sezonlukdizi8.com/dizi/inception-hd  → "inception-hd"
+// URL formatı: /diziler/breaking-bad.html → "breaking-bad"
 function getEndpoint(showUrl) {
   var parts = showUrl.replace(/\/$/, '').split('/');
-  return parts[parts.length - 1];
+  return parts[parts.length - 1].replace(/\.html?$/i, '');
 }
 
 // ── Bölüm sayfasını çek, season+episode'a uyan linki bul ─────
@@ -286,6 +286,8 @@ function getStreams(tmdbId, mediaType, season, episode) {
     })
     .then(function(showUrl) {
       if (!showUrl) throw new Error('Dizi bulunamadı');
+      // Relative URL'yi absolute yap
+      if (showUrl.indexOf('http') !== 0) showUrl = BASE_URL + showUrl;
       console.log('[SezonlukDizi] Dizi URL: ' + showUrl);
       return fetchEpisodeUrl(showUrl, season, episode);
     })
