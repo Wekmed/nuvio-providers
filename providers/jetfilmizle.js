@@ -54,6 +54,7 @@ function searchJet(query) {
   })
     .then(function(r) { return r.text(); })
     .then(function(html) {
+      console.log('[JetFilmizle] Arama ham yanıt: ' + html.slice(0, 500));
       // article.movie → h2/h3/... a href
       var results = [];
       var re = /<article[^>]+class="[^"]*movie[^"]*"[\s\S]*?<a\s+href="([^"]+)"[^>]*>[\s\S]*?<(?:h2|h3|h4|h5|h6)[^>]*>\s*<a[^>]*>([^<]+)</g;
