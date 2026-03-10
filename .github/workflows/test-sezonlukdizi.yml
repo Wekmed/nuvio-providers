@@ -32,7 +32,7 @@ jobs:
         run: |
           node -e "
           var src = require('fs').readFileSync('./providers/sezonlukdizi.js', 'utf8');
-          src = src.replace('YOUR_KEY_HERE', process.env.TMDB_API_KEY || '');
+          src = src.replace('500330721680edb6d5f7f12ba7cd9023', process.env.TMDB_API_KEY || '');
           var tmpFile = '/tmp/sezonlukdizi_test.js';
           require('fs').writeFileSync(tmpFile, src);
           var provider = require(tmpFile);
