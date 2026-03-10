@@ -36,8 +36,7 @@ jobs:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: |
           node -e "
-          var fetch = require('node-fetch');
-          global.fetch = fetch;
+          // Node 18+ built-in fetch kullan
 
           // TMDB key'i env'den al
           var src = require('fs').readFileSync('./providers/sezonlukdizi.js', 'utf8');
@@ -69,3 +68,4 @@ jobs:
               process.exit(1);
             });
           "
+          
