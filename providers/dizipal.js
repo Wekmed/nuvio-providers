@@ -50,6 +50,7 @@ function searchDiziPal(query) {
   })
     .then(function(r) { return r.text(); })
     .then(function(text) {
+      console.log('[DiziPal] Arama ham yanıt: ' + text.slice(0, 300));
       try {
         var map = JSON.parse(text);
         // Obje → array dönüştür
@@ -274,3 +275,4 @@ function getStreams(tmdbId, mediaType, season, episode) {
 }
 
 module.exports = { getStreams: getStreams };
+      
