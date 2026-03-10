@@ -99,16 +99,19 @@ function getEndpoint(showUrl) {
 function fetchEpisodeUrl(showUrl, season, episode) {
   var endpoint = getEndpoint(showUrl);
   var url = BASE_URL + '/bolumler/' + endpoint;
+  console.log('[SezonlukDizi] Bölümler URL: ' + url);
 
   return fetch(url, { headers: HEADERS })
     .then(function(r) { return r.text(); })
     .then(function(html) {
-      // table.unstackable içinde  tbody tr  satırları
-      // Sütun düzeni: #, Sezon, Bölüm, Bölüm Adı (link)
-      // <td>1.Sezon</td> <td>1.Bölüm</td> <td><a href="...">...</a></td>
+      console.log('[SezonlukDizi] Bölümler HTML uzunluğu: ' + html.length);
+      console.log('[SezonlukDizi] HTML snippet: ' + html.slice(0, 800));
+
       var rowRe = /<tr[\s\S]*?<\/tr>/g;
       var tdRe  = /<td[^>]*>([\s\S]*?)<\/td>/g;
       var rows  = html.match(rowRe) || [];
+      console.log('[SezonlukDizi] Bulunan tr sayısı: ' + rows.length);
+      if (rows.length > 0) console.log('[SezonlukDizi] İlk tr: ' + rows[0].slice(0, 300));
 
       for (var i = 0; i < rows.length; i++) {
         var row  = rows[i];
@@ -324,3 +327,4 @@ function getStreams(tmdbId, mediaType, season, episode) {
 }
 
 module.exports = { getStreams: getStreams };
+
