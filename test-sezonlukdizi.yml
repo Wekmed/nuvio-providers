@@ -1,0 +1,71 @@
+name: Test SezonlukDizi
+
+on:
+  workflow_dispatch:
+    inputs:
+      tmdb_id:
+        description: 'TMDB ID (örnek: 1396 = Breaking Bad)'
+        required: true
+        default: '1396'
+      season:
+        description: 'Sezon numarası'
+        required: true
+        default: '1'
+      episode:
+        description: 'Bölüm numarası'
+        required: true
+        default: '1'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: template
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run test
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+        run: |
+          node -e "
+          var fetch = require('node-fetch');
+          global.fetch = fetch;
+
+          // TMDB key'i env'den al
+          var src = require('fs').readFileSync('./providers/sezonlukdizi.js', 'utf8');
+          src = src.replace('YOUR_KEY_HERE', process.env.TMDB_API_KEY || '');
+          var tmpFile = '/tmp/sezonlukdizi_test.js';
+          require('fs').writeFileSync(tmpFile, src);
+          var provider = require(tmpFile);
+
+          var tmdbId  = parseInt('${{ github.event.inputs.tmdb_id }}');
+          var season  = parseInt('${{ github.event.inputs.season }}');
+          var episode = parseInt('${{ github.event.inputs.episode }}');
+
+          console.log('TMDB ID: ' + tmdbId + ' | S' + season + 'E' + episode);
+
+          provider.getStreams(tmdbId, 'tv', season, episode)
+            .then(function(streams) {
+              if (!streams || streams.length === 0) {
+                console.log('Stream bulunamadı');
+                process.exit(0);
+              }
+              console.log(streams.length + ' stream bulundu:');
+              streams.forEach(function(s, i) {
+                console.log('[' + (i+1) + '] ' + s.label + ' | ' + s.quality);
+                console.log('    URL: ' + (s.url || '').slice(0, 100));
+              });
+            })
+            .catch(function(e) {
+              console.error('HATA: ' + e.message);
+              process.exit(1);
+            });
+          "
