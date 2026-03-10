@@ -15,11 +15,9 @@ var HEADERS = {
   'Referer': BASE_URL + '/'
 };
 
-// ── TMDB'den film bilgisi çek ─────────────────────────────────
 function fetchTmdbInfo(tmdbId) {
   var url = 'https://api.themoviedb.org/3/movie/' + tmdbId
     + '?api_key=' + TMDB_API_KEY + '&language=tr-TR';
-
   return fetch(url)
     .then(function(r) {
       if (!r.ok) throw new Error('TMDB hata: ' + r.status);
@@ -34,230 +32,138 @@ function fetchTmdbInfo(tmdbId) {
     });
 }
 
-// ── Normalize ────────────────────────────────────────────────
-function normalizeStr(str) {
-  return (str || '')
+function titleToSlug(title) {
+  return (title || '')
     .toLowerCase()
-    .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
-    .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c')
-    .replace(/[^a-z0-9]/g, '');
+    .replace(/ğ/g, 'g').replace(/Ğ/g, 'g')
+    .replace(/ü/g, 'u').replace(/Ü/g, 'u')
+    .replace(/ş/g, 's').replace(/Ş/g, 's')
+    .replace(/ı/g, 'i').replace(/İ/g, 'i')
+    .replace(/ö/g, 'o').replace(/Ö/g, 'o')
+    .replace(/ç/g, 'c').replace(/Ç/g, 'c')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
-// ── Arama: GET /arama?q= ─────────────────────────────────────
-function searchJet(query) {
-  return fetch(BASE_URL + '/arama?q=' + encodeURIComponent(query), {
-    method: 'GET',
-    headers: HEADERS
-  })
+function tryFetchFilm(url) {
+  return fetch(url, { headers: HEADERS })
+    .then(function(r) {
+      // redirect veya 200 — URL /film/ içeriyorsa geçerli
+      var finalUrl = r.url || url;
+      if (r.ok && finalUrl.indexOf('/film/') !== -1) return finalUrl;
+      return null;
+    })
+    .catch(function() { return null; });
+}
+
+function findFilmUrl(titleTr, titleEn) {
+  var slugTr = titleToSlug(titleTr);
+  var slugEn = titleToSlug(titleEn);
+  var candidates = [];
+  if (slugTr) candidates.push(BASE_URL + '/film/' + slugTr);
+  if (slugEn && slugEn !== slugTr) candidates.push(BASE_URL + '/film/' + slugEn);
+
+  console.log('[JetFilmizle] Sluglar: ' + candidates.join(', '));
+
+  function tryNext(i) {
+    if (i >= candidates.length) return searchFallback(titleTr, titleEn);
+    return tryFetchFilm(candidates[i]).then(function(found) {
+      if (found) { console.log('[JetFilmizle] Slug OK: ' + found); return found; }
+      return tryNext(i + 1);
+    });
+  }
+  return tryNext(0);
+}
+
+function searchFallback(titleTr, titleEn) {
+  var query = titleTr || titleEn;
+  console.log('[JetFilmizle] Arama fallback: ' + query);
+  return fetch(BASE_URL + '/arama?q=' + encodeURIComponent(query), { headers: HEADERS })
     .then(function(r) { return r.text(); })
     .then(function(html) {
-      var results = [];
-
-      // JSON-LD içindeki sonuçları parse et (en güvenilir yöntem)
-      var ldRe = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/g;
-      var ldM;
-      while ((ldM = ldRe.exec(html)) !== null) {
-        try {
-          var json = JSON.parse(ldM[1]);
-          var items = json && json.mainEntity && json.mainEntity.result && json.mainEntity.result.itemListElement;
-          if (items && items.length > 0) {
-            items.forEach(function(item) {
-              if (item.url && item.name) {
-                results.push({ href: item.url, title: item.name, year: item.datePublished || '' });
-              }
-            });
-            break;
-          }
-        } catch(e) {}
+      var cardRe = /href="(https?:\/\/jetfilmizle\.net\/film\/[^"?#]+)"/g;
+      var m, seen = {}, links = [];
+      while ((m = cardRe.exec(html)) !== null) {
+        if (!seen[m[1]]) { seen[m[1]] = true; links.push(m[1]); }
       }
-
-      // Fallback: film-card linklerinden parse et
-      if (results.length === 0) {
-        var cardRe = /href="(https:\/\/jetfilmizle\.net\/film\/[^"]+)"[^>]*title="([^"]+)"/g;
-        var m2;
-        while ((m2 = cardRe.exec(html)) !== null) {
-          var t = m2[2].replace(/\s*(Full HD|Türkçe Dublaj|İzle)\s*/gi, '').trim();
-          results.push({ href: m2[1], title: t, year: '' });
-        }
+      console.log('[JetFilmizle] Arama: ' + links.length + ' sonuç');
+      if (links.length === 0) throw new Error('Film bulunamadı');
+      var normTr = titleToSlug(titleTr);
+      var normEn = titleToSlug(titleEn);
+      for (var i = 0; i < links.length; i++) {
+        var s = (links[i].split('/film/')[1] || '').split('/')[0];
+        if (s === normTr || s === normEn) return links[i];
       }
-
-      console.log('[JetFilmizle] Arama sonuçları: ' + results.length + ' film');
-      if (results.length > 0) console.log('[JetFilmizle] İlk sonuç: ' + results[0].title + ' → ' + results[0].href);
-      return results;
+      return links[0];
     });
 }
 
-// ── En iyi eşleşmeyi bul ─────────────────────────────────────
-function findBestMatch(results, titleEn, titleTr, year) {
-  var normEn = normalizeStr(titleEn);
-  var normTr = normalizeStr(titleTr);
-
-  // 1. Tam başlık + yıl (JSON-LD year alanından)
-  if (year) {
-    for (var i = 0; i < results.length; i++) {
-      var normTitle = normalizeStr(results[i].title);
-      if ((normTitle === normEn || normTitle === normTr) && results[i].year === year) {
-        return results[i].href;
-      }
-    }
-  }
-
-  // 2. Tam başlık eşleşmesi
-  for (var j = 0; j < results.length; j++) {
-    var t = normalizeStr(results[j].title);
-    if (t === normEn || t === normTr) return results[j].href;
-  }
-
-  // 3. Başlık içeriyor
-  for (var k = 0; k < results.length; k++) {
-    var t2 = normalizeStr(results[k].title);
-    if (t2.indexOf(normEn) !== -1 || normEn.indexOf(t2) !== -1) return results[k].href;
-  }
-
-  if (results.length > 0) return results[0].href;
-  return null;
-}
-
-// ── Film sayfasından iframe ve pixeldrain linklerini al ───────
 function fetchFilmLinks(filmUrl) {
   return fetch(filmUrl, { headers: HEADERS })
     .then(function(r) { return r.text(); })
     .then(function(html) {
       var links = [];
-
-      // Pixeldrain download linkleri — direkt mp4
-      // HTML'de href önce, class sonra gelir: <a href="..." class="...download-btn...">
       var dlRe = /href="(https?:\/\/pixeldrain\.com\/u\/[^"]+)"/g;
       var m;
       while ((m = dlRe.exec(html)) !== null) {
-        var href = m[1];
-        links.push({ type: 'pixeldrain', url: href });
-        console.log('[JetFilmizle] Pixeldrain: ' + href);
+        links.push({ type: 'pixeldrain', url: m[1] });
+        console.log('[JetFilmizle] Pixeldrain: ' + m[1]);
       }
-
-      // Ana iframe (data-litespeed-src veya src)
-      var iframeM = html.match(/div#movie[\s\S]{0,500}?<iframe[^>]+(?:data-litespeed-src|src)="([^"]+)"/i);
-      if (!iframeM) iframeM = html.match(/<div[^>]+id="movie"[\s\S]{0,500}?<iframe[^>]+(?:data-litespeed-src|src)="([^"]+)"/i);
-      if (iframeM) {
-        links.push({ type: 'iframe', url: iframeM[1] });
-        console.log('[JetFilmizle] iframe: ' + iframeM[1]);
+      // iframe fallback
+      var ifRe = /<iframe[^>]+(?:src|data-src)="([^"]*(?:jetv|d2rs|vidmoly|mlycdn)[^"]*)"/gi;
+      var im;
+      while ((im = ifRe.exec(html)) !== null) {
+        links.push({ type: 'iframe', url: im[1] });
+        console.log('[JetFilmizle] iframe: ' + im[1]);
       }
-
+      console.log('[JetFilmizle] Toplam link: ' + links.length);
       return links;
     });
 }
 
-// ── Pixeldrain linkini direkt stream'e çevir ──────────────────
-// pixeldrain.com/u/XXXX → pixeldrain.com/api/file/XXXX?download
 function pixeldrainToStream(pdUrl) {
-  var fileId = pdUrl.split('/').pop().split('?')[0];
-  var directUrl = 'https://pixeldrain.com/api/file/' + fileId + '?download';
+  var fileId = pdUrl.split('/u/').pop().split('?')[0];
   return {
-    url:     directUrl,
+    url:     'https://pixeldrain.com/api/file/' + fileId + '?download',
     quality: 'Auto',
     label:   'JetFilmizle — Pixeldrain',
     headers: { 'Referer': 'https://pixeldrain.com/' }
   };
 }
 
-// ── iframe'den stream çek (d2rs / jetv / diğer) ───────────────
 function fetchIframeStream(iframeUrl) {
-  return fetch(iframeUrl, {
-    headers: Object.assign({}, HEADERS, { 'Referer': BASE_URL + '/' })
-  })
+  return fetch(iframeUrl, { headers: Object.assign({}, HEADERS, { 'Referer': BASE_URL + '/' }) })
     .then(function(r) { return r.text(); })
     .then(function(html) {
-      // jetv.xyz: "sources": [{file:'...', type:'...', label:'...'}]
-      var sourcesM = html.match(/"sources"\s*:\s*\[([\s\S]*?)\]/);
-      if (sourcesM) {
-        var fileM  = sourcesM[1].match(/file['":\s]+['"]([^'"]+)['"]/);
-        var labelM = sourcesM[1].match(/label['":\s]+['"]([^'"]+)['"]/);
-        if (fileM) {
-          var url = fileM[1];
-          var isM3u8 = url.indexOf('.m3u8') !== -1;
-          if (isM3u8) {
-            console.log('[JetFilmizle] m3u8 atlanıyor: ' + url.slice(0, 80));
-            return null;
-          }
-          return {
-            url:     url,
-            quality: labelM ? labelM[1] : 'Auto',
-            label:   'JetFilmizle — Jetv'
-          };
-        }
-      }
-
-      // d2rs: içinde başka iframe var
-      var innerM = html.match(/<iframe[^>]+src="([^"]+)"/i);
-      if (innerM) {
-        return fetchIframeStream(innerM[1]);
-      }
-
-      // Direkt mp4
-      var mp4M = html.match(/["'](https?:[^"']+\.mp4[^"']{0,50})["']/i);
-      if (mp4M) {
-        return {
-          url:     mp4M[1],
-          quality: 'Auto',
-          label:   'JetFilmizle — Direct'
-        };
-      }
-
-      console.log('[JetFilmizle] iframe stream bulunamadı');
+      var vm = /(https?:\/\/[^\s"'<>]+\.(?:mp4|mkv|webm|avi)(?:\?[^"'\s<>]*)?)/gi.exec(html);
+      if (vm) return { url: vm[1], quality: 'Auto', label: 'JetFilmizle — Player' };
       return null;
     })
-    .catch(function(e) {
-      console.log('[JetFilmizle] iframe hata: ' + e.message);
-      return null;
-    });
+    .catch(function() { return null; });
 }
 
-// ── Ana fonksiyon ─────────────────────────────────────────────
 function getStreams(tmdbId, mediaType, season, episode) {
   if (mediaType !== 'movie') return Promise.resolve([]);
-
   console.log('[JetFilmizle] getStreams → tmdbId=' + tmdbId);
 
   return fetchTmdbInfo(tmdbId)
     .then(function(info) {
       console.log('[JetFilmizle] TMDB: "' + info.titleEn + '" / "' + info.titleTr + '" (' + info.year + ')');
-
-      return searchJet(info.titleEn)
-        .then(function(results) {
-          console.log('[JetFilmizle] Arama sonucu (' + info.titleEn + '): ' + results.length);
-          var url = findBestMatch(results, info.titleEn, info.titleTr, info.year);
-          if (url) return url;
-
-          return searchJet(info.titleTr).then(function(r2) {
-            console.log('[JetFilmizle] Arama sonucu (' + info.titleTr + '): ' + r2.length);
-            return findBestMatch(r2, info.titleEn, info.titleTr, info.year);
-          });
-        });
+      return findFilmUrl(info.titleTr, info.titleEn);
     })
     .then(function(filmUrl) {
-      if (!filmUrl) throw new Error('Film bulunamadı');
-      if (filmUrl.indexOf('http') !== 0) filmUrl = BASE_URL + filmUrl;
       console.log('[JetFilmizle] Film URL: ' + filmUrl);
       return fetchFilmLinks(filmUrl);
     })
     .then(function(links) {
-      console.log('[JetFilmizle] Bulunan link sayısı: ' + links.length);
-
-      var streams = [];
-      var promises = [];
-
+      var streams = [], promises = [];
       links.forEach(function(link) {
         if (link.type === 'pixeldrain') {
           streams.push(pixeldrainToStream(link.url));
         } else if (link.type === 'iframe') {
-          promises.push(
-            fetchIframeStream(link.url).then(function(s) {
-              if (s) streams.push(s);
-            })
-          );
+          promises.push(fetchIframeStream(link.url).then(function(s) { if (s) streams.push(s); }));
         }
       });
-
       return Promise.all(promises).then(function() { return streams; });
     })
     .then(function(streams) {
