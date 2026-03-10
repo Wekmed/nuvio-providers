@@ -104,11 +104,25 @@ function fetchEpisodeUrl(showUrl, season, episode) {
   return Promise.resolve(url);
 }
 
-// ── Bölüm sayfasından bid (data-id) çek ──────────────────────
+// ── Bölüm sayfasından bid (data-id) ve cookie çek ────────────
 function fetchBid(episodeUrl) {
   return fetch(episodeUrl, { headers: HEADERS })
-    .then(function(r) { return r.text(); })
-    .then(function(html) {
+    .then(function(r) {
+      // Cookie'leri topla
+      var cookies = '';
+      var setCookie = r.headers.get('set-cookie');
+      if (setCookie) {
+        cookies = setCookie.split(',').map(function(c) {
+          return c.trim().split(';')[0];
+        }).join('; ');
+      }
+      console.log('[SezonlukDizi] Cookie: ' + (cookies || '(yok)'));
+      return r.text().then(function(html) {
+        return { html: html, cookies: cookies };
+      });
+    })
+    .then(function(result) {
+      var html = result.html;
       var m = html.match(/id=["']dilsec["'][^>]+data-id=["']([^"']+)["']/);
       if (!m) m = html.match(/data-id=["']([^"']+)["'][^>]+id=["']dilsec["']/);
       if (!m) {
@@ -116,21 +130,26 @@ function fetchBid(episodeUrl) {
         return null;
       }
       console.log('[SezonlukDizi] bid: ' + m[1]);
-      return m[1];
+      return { bid: m[1], cookies: result.cookies };
     });
 }
 
 // ── Alternatif listesi çek (dil: 0=dublaj, 1=altyazı) ────────
-function fetchAlternatifler(bid, dil, aspData) {
+function fetchAlternatifler(bid, dil, aspData, cookies) {
   var url = BASE_URL + '/ajax/dataAlternatif' + aspData.alternatif + '.asp';
   var body = 'bid=' + encodeURIComponent(bid) + '&dil=' + dil;
 
+  var extraHeaders = {
+    'X-Requested-With': 'XMLHttpRequest',
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Origin': BASE_URL,
+    'Referer': BASE_URL + '/'
+  };
+  if (cookies) extraHeaders['Cookie'] = cookies;
+
   return fetch(url, {
     method: 'POST',
-    headers: Object.assign({}, HEADERS, {
-      'X-Requested-With': 'XMLHttpRequest',
-      'Content-Type': 'application/x-www-form-urlencoded'
-    }),
+    headers: Object.assign({}, HEADERS, extraHeaders),
     body: body
   })
     .then(function(r) { return r.text(); })
@@ -215,8 +234,8 @@ function processVeri(veri, dilAd, aspData) {
 }
 
 // ── Bir dil için tüm alternatifleri işle ─────────────────────
-function processLanguage(bid, dil, dilAd, aspData) {
-  return fetchAlternatifler(bid, dil, aspData)
+function processLanguage(bid, dil, dilAd, aspData, cookies) {
+  return fetchAlternatifler(bid, dil, aspData, cookies)
     .then(function(veriList) {
       console.log('[SezonlukDizi] ' + dilAd + ' alternatif sayısı: ' + veriList.length);
       var promises = veriList.map(function(veri) {
@@ -231,7 +250,6 @@ function processLanguage(bid, dil, dilAd, aspData) {
 
 // ── Ana fonksiyon ─────────────────────────────────────────────
 function getStreams(tmdbId, mediaType, season, episode) {
-  // Sadece dizi
   if (mediaType !== 'tv') return Promise.resolve([]);
 
   console.log('[SezonlukDizi] getStreams → tmdbId=' + tmdbId + ' S' + season + 'E' + episode);
@@ -241,8 +259,6 @@ function getStreams(tmdbId, mediaType, season, episode) {
   return fetchTmdbInfo(tmdbId)
     .then(function(info) {
       console.log('[SezonlukDizi] TMDB: ' + info.titleEn + ' / ' + info.titleTr);
-
-      // Önce İngilizce ara, sonra Türkçe
       return searchShow(info.titleEn)
         .then(function(results) {
           var url = findBestMatch(results, info.titleEn);
@@ -254,7 +270,6 @@ function getStreams(tmdbId, mediaType, season, episode) {
     })
     .then(function(showUrl) {
       if (!showUrl) throw new Error('Dizi bulunamadı');
-      // Relative URL'yi absolute yap
       if (showUrl.indexOf('http') !== 0) showUrl = BASE_URL + showUrl;
       console.log('[SezonlukDizi] Dizi URL: ' + showUrl);
       return fetchEpisodeUrl(showUrl, season, episode);
@@ -269,15 +284,15 @@ function getStreams(tmdbId, mediaType, season, episode) {
       ]);
     })
     .then(function(results) {
-      var bid     = results[0];
+      var bidData  = results[0]; // { bid, cookies }
       aspDataCache = results[1];
 
-      if (!bid) throw new Error('bid alınamadı');
+      if (!bidData || !bidData.bid) throw new Error('bid alınamadı');
       console.log('[SezonlukDizi] ASP: alternatif=' + aspDataCache.alternatif + ' embed=' + aspDataCache.embed);
 
       return Promise.all([
-        processLanguage(bid, '0', 'Dublaj',   aspDataCache),
-        processLanguage(bid, '1', 'Altyazılı', aspDataCache)
+        processLanguage(bidData.bid, '0', 'Dublaj',    aspDataCache, bidData.cookies),
+        processLanguage(bidData.bid, '1', 'Altyazılı', aspDataCache, bidData.cookies)
       ]);
     })
     .then(function(allStreams) {
@@ -292,4 +307,4 @@ function getStreams(tmdbId, mediaType, season, episode) {
 }
 
 module.exports = { getStreams: getStreams };
-
+      
