@@ -98,46 +98,10 @@ function getEndpoint(showUrl) {
 // ── Bölüm sayfasını çek, season+episode'a uyan linki bul ─────
 function fetchEpisodeUrl(showUrl, season, episode) {
   var endpoint = getEndpoint(showUrl);
-  var url = BASE_URL + '/bolumler/' + endpoint;
-  console.log('[SezonlukDizi] Bölümler URL: ' + url);
-
-  return fetch(url, { headers: HEADERS })
-    .then(function(r) { return r.text(); })
-    .then(function(html) {
-      console.log('[SezonlukDizi] Bölümler HTML uzunluğu: ' + html.length);
-      console.log('[SezonlukDizi] HTML snippet: ' + html.slice(0, 800));
-
-      var rowRe = /<tr[\s\S]*?<\/tr>/g;
-      var tdRe  = /<td[^>]*>([\s\S]*?)<\/td>/g;
-      var rows  = html.match(rowRe) || [];
-      console.log('[SezonlukDizi] Bulunan tr sayısı: ' + rows.length);
-      if (rows.length > 0) console.log('[SezonlukDizi] İlk tr: ' + rows[0].slice(0, 300));
-
-      for (var i = 0; i < rows.length; i++) {
-        var row  = rows[i];
-        var tds  = [];
-        var m;
-        while ((m = tdRe.exec(row)) !== null) tds.push(m[1]);
-        tdRe.lastIndex = 0;
-
-        if (tds.length < 4) continue;
-
-        // tds[1] = "1.Sezon", tds[2] = "1.Bölüm"
-        var epSezon = parseInt((tds[1] || '').replace(/\.Sezon.*/i, '').trim());
-        var epBolum = parseInt((tds[2] || '').replace(/\.Bölüm.*/i, '').trim());
-
-        if (epSezon === season && epBolum === episode) {
-          var linkMatch = tds[3].match(/href=["']([^"']+)["']/);
-          if (linkMatch) {
-            var href = linkMatch[1];
-            if (href.indexOf('http') !== 0) href = BASE_URL + href;
-            console.log('[SezonlukDizi] Bölüm bulundu: ' + href);
-            return href;
-          }
-        }
-      }
-      return null;
-    });
+  // Format: https://sezonlukdizi8.com/breaking-bad/1-sezon-1-bolum.html
+  var url = BASE_URL + '/' + endpoint + '/' + season + '-sezon-' + episode + '-bolum.html';
+  console.log('[SezonlukDizi] Bölüm URL: ' + url);
+  return Promise.resolve(url);
 }
 
 // ── Bölüm sayfasından bid (data-id) çek ──────────────────────
@@ -327,4 +291,4 @@ function getStreams(tmdbId, mediaType, season, episode) {
 }
 
 module.exports = { getStreams: getStreams };
-
+          
