@@ -128,7 +128,7 @@ function fetchFilmLinks(filmUrl) {
     });
 }
 
-function pixeldrainToStream(pdUrl) {
+REPLACE_ME
   var fileId = pdUrl.split('/u/').pop().split('?')[0];
   return {
     url:     'https://pixeldrain.com/api/file/' + fileId + '?download',
@@ -166,7 +166,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
       var streams = [], promises = [];
       links.forEach(function(link) {
         if (link.type === 'pixeldrain') {
-          streams.push(pixeldrainToStream(link.url));
+          promises.push(pixeldrainToStream(link.url).then(function(s) { if (s) streams.push(s); }));
         } else if (link.type === 'iframe') {
           promises.push(fetchIframeStream(link.url).then(function(s) { if (s) streams.push(s); }));
         }
@@ -183,4 +183,37 @@ function getStreams(tmdbId, mediaType, season, episode) {
     });
 }
 
+function pixeldrainToStream(pdUrl) {
+  var fileId = pdUrl.split('/u/').pop().split('?')[0];
+  var directUrl = 'https://pixeldrain.com/api/file/' + fileId + '?download';
+  return fetch('https://pixeldrain.com/api/file/' + fileId + '/info')
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(info) {
+      var name = (info && info.name) || '';
+      var quality = 'Auto';
+      if (/2160p|4k/i.test(name)) quality = '4K';
+      else if (/1080p/i.test(name)) quality = '1080p';
+      else if (/720p/i.test(name)) quality = '720p';
+      else if (/480p/i.test(name)) quality = '480p';
+      console.log('[JetFilmizle] Pixeldrain dosya: ' + name + ' kalite: ' + quality);
+      return {
+        url: directUrl,
+        quality: quality,
+        label: 'JetFilmizle — Pixeldrain (' + quality + ')',
+        headers: { 'Referer': 'https://pixeldrain.com/' }
+      };
+    })
+    .catch(function() {
+      return {
+        url: directUrl,
+        quality: 'Auto',
+        label: 'JetFilmizle — Pixeldrain',
+        headers: { 'Referer': 'https://pixeldrain.com/' }
+      };
+    });
+}
+
+
 module.exports = { getStreams: getStreams };
+
+// Override: kalite bilgisi için Pixeldrain info API'si
