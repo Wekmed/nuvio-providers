@@ -43,43 +43,46 @@ function normalizeStr(str) {
     .replace(/[^a-z0-9]/g, '');
 }
 
-// ── Arama: POST /filmara.php ──────────────────────────────────
+// ── Arama: GET /arama?q= ─────────────────────────────────────
 function searchJet(query) {
-  return fetch(BASE_URL + '/filmara.php', {
-    method: 'POST',
-    headers: Object.assign({}, HEADERS, {
-      'Content-Type': 'application/x-www-form-urlencoded'
-    }),
-    body: 's=' + encodeURIComponent(query)
+  return fetch(BASE_URL + '/arama?q=' + encodeURIComponent(query), {
+    method: 'GET',
+    headers: HEADERS
   })
     .then(function(r) { return r.text(); })
     .then(function(html) {
-      console.log('[JetFilmizle] Arama ham yanıt: ' + html.slice(0, 500));
-      // article.movie → h2/h3/... a href
       var results = [];
-      var re = /<article[^>]+class="[^"]*movie[^"]*"[\s\S]*?<a\s+href="([^"]+)"[^>]*>[\s\S]*?<(?:h2|h3|h4|h5|h6)[^>]*>\s*<a[^>]*>([^<]+)</g;
-      var m;
-      while ((m = re.exec(html)) !== null) {
-        results.push({
-          href:  m[1],
-          title: m[2].replace(/ izle$/i, '').trim()
-        });
-      }
-      // Alternatif parse - önce tüm article.movie bloklarını bul
-      if (results.length === 0) {
-        var articleRe = /<article[^>]*class="[^"]*movie[^"]*"([\s\S]*?)<\/article>/g;
-        while ((m = articleRe.exec(html)) !== null) {
-          var block = m[1];
-          var hrefM  = block.match(/href="([^"]+)"/);
-          var titleM = block.match(/<(?:h2|h3|h4|h5|h6)[^>]*>[^<]*<a[^>]*>([^<]+)<\/a>/);
-          if (hrefM && titleM) {
-            results.push({
-              href:  hrefM[1],
-              title: titleM[1].replace(/ izle$/i, '').trim()
+
+      // JSON-LD içindeki sonuçları parse et (en güvenilir yöntem)
+      var ldRe = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/g;
+      var ldM;
+      while ((ldM = ldRe.exec(html)) !== null) {
+        try {
+          var json = JSON.parse(ldM[1]);
+          var items = json && json.mainEntity && json.mainEntity.result && json.mainEntity.result.itemListElement;
+          if (items && items.length > 0) {
+            items.forEach(function(item) {
+              if (item.url && item.name) {
+                results.push({ href: item.url, title: item.name, year: item.datePublished || '' });
+              }
             });
+            break;
           }
+        } catch(e) {}
+      }
+
+      // Fallback: film-card linklerinden parse et
+      if (results.length === 0) {
+        var cardRe = /href="(https:\/\/jetfilmizle\.net\/film\/[^"]+)"[^>]*title="([^"]+)"/g;
+        var m2;
+        while ((m2 = cardRe.exec(html)) !== null) {
+          var t = m2[2].replace(/\s*(Full HD|Türkçe Dublaj|İzle)\s*/gi, '').trim();
+          results.push({ href: m2[1], title: t, year: '' });
         }
       }
+
+      console.log('[JetFilmizle] Arama sonuçları: ' + results.length + ' film');
+      if (results.length > 0) console.log('[JetFilmizle] İlk sonuç: ' + results[0].title + ' → ' + results[0].href);
       return results;
     });
 }
@@ -89,12 +92,11 @@ function findBestMatch(results, titleEn, titleTr, year) {
   var normEn = normalizeStr(titleEn);
   var normTr = normalizeStr(titleTr);
 
-  // 1. Tam başlık + yıl URL'de
+  // 1. Tam başlık + yıl (JSON-LD year alanından)
   if (year) {
     for (var i = 0; i < results.length; i++) {
-      var normHref = normalizeStr(results[i].href);
       var normTitle = normalizeStr(results[i].title);
-      if ((normTitle === normEn || normTitle === normTr) && results[i].href.indexOf(year) !== -1) {
+      if ((normTitle === normEn || normTitle === normTr) && results[i].year === year) {
         return results[i].href;
       }
     }
@@ -124,14 +126,13 @@ function fetchFilmLinks(filmUrl) {
       var links = [];
 
       // Pixeldrain download linkleri — direkt mp4
-      var dlRe = /class="[^"]*download-btn[^"]*"[^>]*href="([^"]+)"/g;
+      // HTML'de href önce, class sonra gelir: <a href="..." class="...download-btn...">
+      var dlRe = /href="(https?:\/\/pixeldrain\.com\/u\/[^"]+)"/g;
       var m;
       while ((m = dlRe.exec(html)) !== null) {
         var href = m[1];
-        if (href.indexOf('pixeldrain.com') !== -1) {
-          links.push({ type: 'pixeldrain', url: href });
-          console.log('[JetFilmizle] Pixeldrain: ' + href);
-        }
+        links.push({ type: 'pixeldrain', url: href });
+        console.log('[JetFilmizle] Pixeldrain: ' + href);
       }
 
       // Ana iframe (data-litespeed-src veya src)
