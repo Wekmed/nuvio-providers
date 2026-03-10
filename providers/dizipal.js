@@ -7,7 +7,7 @@
 //       Çalışmazsa BASE_URL'i güncelle
 // ============================================================
 
-var BASE_URL     = 'https://dizipal1540.com';
+var BASE_URL     = 'https://dizipal1542.com';
 var TMDB_API_KEY = '500330721680edb6d5f7f12ba7cd9023';
 
 var HEADERS = {
