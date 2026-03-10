@@ -198,25 +198,26 @@ function fetchEmbedIframe(embedId, aspData) {
     });
 }
 
-// ── iframe sayfasından m3u8 / video URL çek ──────────────────
+// ── iframe sayfasından doğrudan video URL çek (m3u8 desteklenmiyor) ──
 function fetchStreamFromIframe(iframeSrc) {
   return fetch(iframeSrc, {
     headers: Object.assign({}, HEADERS, { 'Referer': BASE_URL + '/' })
   })
     .then(function(r) { return r.text(); })
     .then(function(html) {
-      // file:"..."  veya  file:'...'
-      var m = html.match(/file\s*:\s*["']([^"']+\.m3u8[^"']*)['"]/i);
-      if (m) return { url: m[1], type: 'm3u8' };
-
-      // sources:[{file:"..."}]
-      m = html.match(/['"](https?:[^"']+\.m3u8[^"']*)['"]/i);
-      if (m) return { url: m[1], type: 'm3u8' };
-
-      // Doğrudan mp4
-      m = html.match(/['"](https?:[^"']+\.mp4[^"']*)['"]/i);
+      // mp4
+      var m = html.match(/["'](https?:[^"']+\.mp4[^"']*)['"]/i);
       if (m) return { url: m[1], type: 'mp4' };
 
+      // mkv
+      m = html.match(/["'](https?:[^"']+\.mkv[^"']*)['"]/i);
+      if (m) return { url: m[1], type: 'mkv' };
+
+      // avi, webm
+      m = html.match(/["'](https?:[^"']+\.(avi|webm)[^"']*)['"]/i);
+      if (m) return { url: m[1], type: m[2] };
+
+      console.log('[SezonlukDizi] Desteklenen format bulunamadı (muhtemelen m3u8)');
       return null;
     });
 }
