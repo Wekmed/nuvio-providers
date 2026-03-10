@@ -1,0 +1,54 @@
+name: Test JetFilmizle
+
+on:
+  workflow_dispatch:
+    inputs:
+      tmdb_id:
+        description: 'TMDB ID (film)'
+        required: true
+        default: '27205'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run test
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+        run: |
+          node -e "
+          var src = require('fs').readFileSync('./providers/jetfilmizle.js', 'utf8');
+          src = src.replace('YOUR_KEY_HERE', process.env.TMDB_API_KEY || '');
+          var tmpFile = '/tmp/jetfilmizle_test.js';
+          require('fs').writeFileSync(tmpFile, src);
+          var provider = require(tmpFile);
+
+          var tmdbId = parseInt('${{ github.event.inputs.tmdb_id }}');
+          console.log('TMDB ID: ' + tmdbId);
+
+          provider.getStreams(tmdbId, 'movie', 0, 0)
+            .then(function(streams) {
+              if (!streams || streams.length === 0) {
+                console.log('Stream bulunamadi');
+                process.exit(0);
+              }
+              console.log(streams.length + ' stream bulundu:');
+              streams.forEach(function(s, i) {
+                console.log('[' + (i+1) + '] ' + s.label + ' | ' + s.quality);
+                console.log('    URL: ' + (s.url || '').slice(0, 100));
+              });
+            })
+            .catch(function(e) {
+              console.error('HATA: ' + e.message);
+              process.exit(1);
+            });
+          "
