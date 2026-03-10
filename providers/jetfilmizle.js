@@ -1,8 +1,5 @@
 // ============================================================
 //  JetFilmizle — Nuvio Provider
-//  CloudStream (Kotlin) → Nuvio (JavaScript) port
-//  Kaynak: JetFilmizle.kt by @keyiflerolsun / @KekikAkademi
-//  Sadece Film (movie) destekler
 // ============================================================
 
 var BASE_URL     = 'https://jetfilmizle.net';
@@ -45,15 +42,12 @@ function titleToSlug(title) {
     .replace(/^-+|-+$/g, '');
 }
 
-function tryFetchFilm(url) {
-  return fetch(url, { headers: HEADERS })
-    .then(function(r) {
-      // redirect veya 200 — URL /film/ içeriyorsa geçerli
-      var finalUrl = r.url || url;
-      if (r.ok && finalUrl.indexOf('/film/') !== -1) return finalUrl;
-      return null;
-    })
-    .catch(function() { return null; });
+// Film sayfasının gerçek bir film sayfası olup olmadığını kontrol et
+function isFilmPage(html) {
+  return html.indexOf('film_id') !== -1 ||
+         html.indexOf('pixeldrain.com') !== -1 ||
+         html.indexOf('player-source-btn') !== -1 ||
+         html.indexOf('film-player') !== -1;
 }
 
 function findFilmUrl(titleTr, titleEn) {
@@ -63,30 +57,44 @@ function findFilmUrl(titleTr, titleEn) {
   if (slugTr) candidates.push(BASE_URL + '/film/' + slugTr);
   if (slugEn && slugEn !== slugTr) candidates.push(BASE_URL + '/film/' + slugEn);
 
-  console.log('[JetFilmizle] Sluglar: ' + candidates.join(', '));
+  console.log('[JetFilmizle] Slug adayları: ' + candidates.join(', '));
 
   function tryNext(i) {
     if (i >= candidates.length) return searchFallback(titleTr, titleEn);
-    return tryFetchFilm(candidates[i]).then(function(found) {
-      if (found) { console.log('[JetFilmizle] Slug OK: ' + found); return found; }
-      return tryNext(i + 1);
-    });
+    var url = candidates[i];
+    return fetch(url, { headers: HEADERS })
+      .then(function(r) {
+        if (!r.ok) {
+          console.log('[JetFilmizle] ' + url + ' → ' + r.status);
+          return tryNext(i + 1);
+        }
+        return r.text().then(function(html) {
+          console.log('[JetFilmizle] ' + url + ' → 200, film sayfası: ' + isFilmPage(html));
+          if (isFilmPage(html)) return url;
+          return tryNext(i + 1);
+        });
+      })
+      .catch(function(e) {
+        console.log('[JetFilmizle] Fetch hatası: ' + e.message);
+        return tryNext(i + 1);
+      });
   }
   return tryNext(0);
 }
 
 function searchFallback(titleTr, titleEn) {
   var query = titleTr || titleEn;
-  console.log('[JetFilmizle] Arama fallback: ' + query);
+  console.log('[JetFilmizle] Arama: ' + query);
   return fetch(BASE_URL + '/arama?q=' + encodeURIComponent(query), { headers: HEADERS })
     .then(function(r) { return r.text(); })
     .then(function(html) {
+      console.log('[JetFilmizle] Arama HTML uzunluğu: ' + html.length);
       var cardRe = /href="(https?:\/\/jetfilmizle\.net\/film\/[^"?#]+)"/g;
       var m, seen = {}, links = [];
       while ((m = cardRe.exec(html)) !== null) {
         if (!seen[m[1]]) { seen[m[1]] = true; links.push(m[1]); }
       }
-      console.log('[JetFilmizle] Arama: ' + links.length + ' sonuç');
+      console.log('[JetFilmizle] Arama linkleri: ' + links.length);
       if (links.length === 0) throw new Error('Film bulunamadı');
       var normTr = titleToSlug(titleTr);
       var normEn = titleToSlug(titleEn);
@@ -109,7 +117,6 @@ function fetchFilmLinks(filmUrl) {
         links.push({ type: 'pixeldrain', url: m[1] });
         console.log('[JetFilmizle] Pixeldrain: ' + m[1]);
       }
-      // iframe fallback
       var ifRe = /<iframe[^>]+(?:src|data-src)="([^"]*(?:jetv|d2rs|vidmoly|mlycdn)[^"]*)"/gi;
       var im;
       while ((im = ifRe.exec(html)) !== null) {
