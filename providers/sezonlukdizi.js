@@ -57,7 +57,16 @@ function fetchAspData() {
     });
 }
 
+function stripPrefix(title) {
+  return (title || '')
+    .replace(/^marvel's\s+/i, '')
+    .replace(/^marvel\s+/i, '')
+    .replace(/^dc's\s+/i, '')
+    .trim();
+}
+
 function titleToSlug(title) {
+  title = stripPrefix(title);
   return (title || '').toLowerCase()
     .replace(/\u011f/g,'g').replace(/\u00fc/g,'u').replace(/\u015f/g,'s')
     .replace(/\u0131/g,'i').replace(/\u0130/g,'i').replace(/\u00f6/g,'o').replace(/\u00e7/g,'c')
