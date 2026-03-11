@@ -12,7 +12,6 @@ var HEADERS = {
   'Referer': BASE_URL + '/'
 };
 
-// ── TMDB dizi bilgisi ─────────────────────────────────────────
 function fetchTmdbInfo(tmdbId) {
   return fetch('https://api.themoviedb.org/3/tv/' + tmdbId
       + '?api_key=' + TMDB_API_KEY + '&language=tr-TR')
@@ -29,7 +28,6 @@ function fetchTmdbInfo(tmdbId) {
     });
 }
 
-// ── Ana sayfadan session cookie al ───────────────────────────
 function fetchSessionCookie() {
   return fetch(BASE_URL + '/', { headers: HEADERS })
     .then(function(r) {
@@ -46,7 +44,6 @@ function fetchSessionCookie() {
     .catch(function() { return ''; });
 }
 
-// ── ASP endpoint numaralarını site.min.js'den çek ─────────────
 function fetchAspData() {
   return fetch(BASE_URL + '/js/site.min.js', { headers: HEADERS })
     .then(function(r) { return r.text(); })
@@ -60,53 +57,40 @@ function fetchAspData() {
     });
 }
 
-// ── Normalize ─────────────────────────────────────────────────
-function normalizeStr(str) {
-  return (str || '').toLowerCase()
-    .replace(/ğ/g,'g').replace(/ü/g,'u').replace(/ş/g,'s')
-    .replace(/ı/g,'i').replace(/İ/g,'i').replace(/ö/g,'o').replace(/ç/g,'c')
-    .replace(/[^a-z0-9]/g,'');
-}
-
-// ── Title → slug ──────────────────────────────────────────────
 function titleToSlug(title) {
   return (title || '').toLowerCase()
-    .replace(/ğ/g,'g').replace(/ü/g,'u').replace(/ş/g,'s')
-    .replace(/ı/g,'i').replace(/İ/g,'i').replace(/ö/g,'o').replace(/ç/g,'c')
+    .replace(/\u011f/g,'g').replace(/\u00fc/g,'u').replace(/\u015f/g,'s')
+    .replace(/\u0131/g,'i').replace(/\u0130/g,'i').replace(/\u00f6/g,'o').replace(/\u00e7/g,'c')
     .replace(/[^a-z0-9]+/g,'-')
     .replace(/^-+|-+$/g,'');
 }
 
-// ── Dizi sayfasının var olup olmadığını doğrula ───────────────
 function validateShowPage(slug) {
   var url = BASE_URL + '/diziler/' + slug + '.html';
   return fetch(url, { headers: HEADERS })
     .then(function(r) {
-      console.log('[SezonlukDizi] Slug dene: ' + url + ' → ' + r.status);
+      console.log('[SezonlukDizi] Slug dene: ' + url + ' -> ' + r.status);
       if (r.status === 404) return null;
       return r.text().then(function(html) {
-        // 404 sayfası değilse (yani gerçek bir dizi sayfasıysa) kabul et
-        if (html.indexOf('Sayfa Bulunamad') !== -1 || html.indexOf('404') !== -1 && html.length < 5000) {
-          console.log('[SezonlukDizi] 404 içeriği: ' + url);
+        if (html.indexOf('Sayfa Bulunamad') !== -1 || html.indexOf('Haydaaa') !== -1) {
+          console.log('[SezonlukDizi] 404 icerigi: ' + slug);
           return null;
         }
-        console.log('[SezonlukDizi] Dizi sayfası doğrulandı: ' + url);
+        var m = html.match(/href="\/([^\/]+)\/\d+-sezon-\d+-bolum\.html"/i);
+        if (m) {
+          console.log('[SezonlukDizi] Gercek slug: ' + m[1]);
+          return m[1];
+        }
+        console.log('[SezonlukDizi] Dizi sayfasi dogrulandi: ' + slug);
         return slug;
       });
     })
-    .catch(function(e) { console.log('[SezonlukDizi] validateShowPage hata: ' + e.message); return null; });
+    .catch(function(e) {
+      console.log('[SezonlukDizi] validateShowPage hata: ' + e.message);
+      return null;
+    });
 }
 
-// ── Bölüm URL oluştur ─────────────────────────────────────────
-function buildEpisodeUrl(showHref, season, episode) {
-  // showHref örn: /diziler/breaking-bad.html veya https://sezonlukdizi.cc/diziler/breaking-bad.html
-  var slug = showHref.replace(BASE_URL, '').replace('/diziler/', '').replace('.html', '');
-  var url = BASE_URL + '/' + slug + '/' + season + '-sezon-' + episode + '-bolum.html';
-  console.log('[SezonlukDizi] Bölüm URL: ' + url);
-  return url;
-}
-
-// ── Bölüm sayfasından bid + Sibnet linkleri al ───────────────
 function fetchBid(episodeUrl, sessionCookie) {
   var hdrs = Object.assign({}, HEADERS);
   if (sessionCookie) hdrs['Cookie'] = sessionCookie;
@@ -123,34 +107,16 @@ function fetchBid(episodeUrl, sessionCookie) {
     })
     .then(function(res) {
       var html = res.html;
-
-      // bid bul
       var m = html.match(/data-id="([^"]+)"[^>]+id="dilsec"/);
       if (!m) m = html.match(/id="dilsec"[^>]+data-id="([^"]+)"/);
       if (!m) m = html.match(/data-id="([^"]+)"/);
       var bid = m ? m[1] : null;
       if (bid) console.log('[SezonlukDizi] bid: ' + bid);
-      else console.log('[SezonlukDizi] bid bulunamadı');
-
-      // Sibnet linklerini direkt HTML'den topla (fallback için)
-      var sibnetLinks = [];
-      var sibRe = /(?:src|href)="(https?:\/\/video\.sibnet\.ru\/[^"]+)"/gi;
-      var sm;
-      while ((sm = sibRe.exec(html)) !== null) {
-        sibnetLinks.push(sm[1]);
-      }
-      // iframe içinde de ara
-      var iframeRe = /<iframe[^>]+src="([^"]*sibnet[^"]*)"/gi;
-      while ((sm = iframeRe.exec(html)) !== null) {
-        if (sibnetLinks.indexOf(sm[1]) === -1) sibnetLinks.push(sm[1]);
-      }
-      console.log('[SezonlukDizi] Sayfada Sibnet link: ' + sibnetLinks.length);
-
-      return { bid: bid, cookies: res.cookies, sibnetLinks: sibnetLinks };
+      else console.log('[SezonlukDizi] bid bulunamadi');
+      return { bid: bid, cookies: res.cookies };
     });
 }
 
-// ── Alternatif listesi ─────────────────────────────────────────
 function fetchAlternatifler(bid, dil, aspData, cookies, refererUrl) {
   var url  = BASE_URL + '/ajax/dataAlternatif' + aspData.alternatif + '.asp';
   var body = 'bid=' + encodeURIComponent(bid) + '&dil=' + dil;
@@ -164,28 +130,20 @@ function fetchAlternatifler(bid, dil, aspData, cookies, refererUrl) {
 
   return fetch(url, { method: 'POST', headers: hdrs, body: body })
     .then(function(r) {
-      console.log('[SezonlukDizi] Alternatif HTTP status (dil=' + dil + '): ' + r.status);
+      console.log('[SezonlukDizi] Alternatif status (dil=' + dil + '): ' + r.status);
       return r.text();
     })
     .then(function(text) {
-      console.log('[SezonlukDizi] Alternatif yanit (dil=' + dil + '): ' + (text || '(bos)').slice(0, 500));
+      console.log('[SezonlukDizi] Alternatif yanit (dil=' + dil + '): ' + (text || '(bos)').slice(0, 300));
       try {
         var json = JSON.parse(text);
         if (json.status === 'success' && Array.isArray(json.data)) return json.data;
         if (Array.isArray(json)) return json;
       } catch(e) {}
-      // HTML yanıt gelirse içindeki linkleri parse et
-      var links = [];
-      var re = /data-id="([^"]+)"[^>]*data-baslik="([^"]*)"/g;
-      var m;
-      while ((m = re.exec(text)) !== null) {
-        links.push({ id: m[1], baslik: m[2], kalite: '' });
-      }
-      return links;
+      return [];
     });
 }
 
-// ── Embed iframe ──────────────────────────────────────────────
 function fetchEmbedIframe(embedId, aspData) {
   var url  = BASE_URL + '/ajax/dataEmbed' + aspData.embed + '.asp';
   var body = 'id=' + encodeURIComponent(embedId);
@@ -204,10 +162,12 @@ function fetchEmbedIframe(embedId, aspData) {
     });
 }
 
-// ── Sibnet extractor ──────────────────────────────────────────
 function fetchSibnetStream(sibnetUrl) {
   var videoId = (sibnetUrl.match(/videoid=(\d+)/) || sibnetUrl.match(/video(\d+)/) || [])[1];
-  if (!videoId) { console.log('[SezonlukDizi] Sibnet videoId bulunamadı: ' + sibnetUrl); return Promise.resolve(null); }
+  if (!videoId) {
+    console.log('[SezonlukDizi] Sibnet videoId bulunamadi: ' + sibnetUrl);
+    return Promise.resolve(null);
+  }
   var shellUrl = 'https://video.sibnet.ru/shell.php?videoid=' + videoId;
   console.log('[SezonlukDizi] Sibnet shell: ' + shellUrl);
 
@@ -218,11 +178,12 @@ function fetchSibnetStream(sibnetUrl) {
     .then(function(html) {
       var m = html.match(/player\.src\s*\(\s*\[\s*\{\s*src\s*:\s*"(\/v\/[^"]+\.mp4[^"]*)"/i);
       if (!m) m = html.match(/src\s*:\s*"(\/v\/[^"]+\.mp4[^"]*)"/i);
-      if (!m) { console.log('[SezonlukDizi] Sibnet /v/ URL bulunamadı'); return null; }
+      if (!m) {
+        console.log('[SezonlukDizi] Sibnet /v/ URL bulunamadi');
+        return null;
+      }
       var vUrl = 'https://video.sibnet.ru' + m[1];
-      console.log('[SezonlukDizi] Sibnet /v/ URL: ' + vUrl);
-
-      // /v/ URL'yi Referer ile döndür — Nuvio oynatırken header gönderir
+      console.log('[SezonlukDizi] Sibnet stream: ' + vUrl);
       return { url: vUrl, type: 'mp4', quality: '1080p', referer: shellUrl };
     })
     .catch(function(e) {
@@ -231,63 +192,36 @@ function fetchSibnetStream(sibnetUrl) {
     });
 }
 
-// ── iframe'den video URL ───────────────────────────────────────
-function fetchStreamFromIframe(src) {
-  // Sibnet özel işlem
-  if (src.indexOf('sibnet.ru') !== -1) {
-    return fetchSibnetStream(src);
-  }
-
-  return fetch(src, { headers: Object.assign({}, HEADERS, { 'Referer': BASE_URL + '/' }) })
-    .then(function(r) { return r.text(); })
-    .then(function(html) {
-      var m = html.match(/["'](https?:[^"']+\.mp4[^"']*)['"]/i);
-      if (m) return { url: m[1], type: 'mp4' };
-      m = html.match(/["'](https?:[^"']+\.mkv[^"']*)['"]/i);
-      if (m) return { url: m[1], type: 'mkv' };
-      m = html.match(/["'](https?:[^"']+\.(avi|webm)[^"']*)['"]/i);
-      if (m) return { url: m[1], type: m[2] };
-      console.log('[SezonlukDizi] Desteklenen format yok (muhtemelen m3u8)');
-      return null;
-    })
-    .catch(function() { return null; });
-}
-
-// ── Bir alternatifi işle ──────────────────────────────────────
 function processVeri(veri, dilAd, aspData) {
-  // Sadece Sibnet işle (mp4 garantili), diğerleri m3u8 veya erişilemiyor
-  var baslik = (veri.baslik || '').toLowerCase();
-  if (baslik !== 'sibnet') {
-    return Promise.resolve(null);
-  }
+  if ((veri.baslik || '').toLowerCase() !== 'sibnet') return Promise.resolve(null);
+
   return fetchEmbedIframe(veri.id, aspData)
     .then(function(src) {
-      if (!src) return null;
+      if (!src || src.indexOf('sibnet.ru') === -1) return null;
       console.log('[SezonlukDizi] iframe: ' + src);
-      return fetchStreamFromIframe(src);
+      return fetchSibnetStream(src);
     })
     .then(function(stream) {
       if (!stream) return null;
       return {
         url:     stream.url,
-        quality: stream.quality || (veri.kalite ? veri.kalite + 'p' : 'Auto'),
-        label:   'SezonlukDizi — ' + dilAd + ' ' + (veri.baslik || ''),
+        quality: '1080p',
+        label:   'SezonlukDizi — ' + dilAd + ' Sibnet',
         headers: { 'Referer': stream.referer || 'https://video.sibnet.ru/' }
       };
     })
     .catch(function() { return null; });
 }
 
-// ── Ana fonksiyon ─────────────────────────────────────────────
 function getStreams(tmdbId, mediaType, season, episode) {
   if (mediaType !== 'tv') return Promise.resolve([]);
-  console.log('[SezonlukDizi] getStreams → tmdbId=' + tmdbId + ' S' + season + 'E' + episode);
+  console.log('[SezonlukDizi] getStreams -> tmdbId=' + tmdbId + ' S' + season + 'E' + episode);
 
   return Promise.all([fetchTmdbInfo(tmdbId), fetchSessionCookie(), fetchAspData()])
     .then(function(init) {
-      var info      = init[0];
-      var cookie    = init[1];
-      var aspData   = init[2];
+      var info    = init[0];
+      var cookie  = init[1];
+      var aspData = init[2];
       console.log('[SezonlukDizi] TMDB: "' + info.titleEn + '" / "' + info.titleTr + '"');
 
       var slugEn = titleToSlug(info.titleEn);
@@ -301,50 +235,32 @@ function getStreams(tmdbId, mediaType, season, episode) {
           return null;
         })
         .then(function(slug) {
-          if (!slug) throw new Error('Dizi bulunamadı: ' + slugEn);
+          if (!slug) throw new Error('Dizi bulunamadi: ' + slugEn);
           var epUrl = BASE_URL + '/' + slug + '/' + season + '-sezon-' + episode + '-bolum.html';
-          console.log('[SezonlukDizi] Bölüm URL: ' + epUrl);
+          console.log('[SezonlukDizi] Bolum URL: ' + epUrl);
           return fetchBid(epUrl, cookie).then(function(bidData) {
             return { bidData: bidData, aspData: aspData, epUrl: epUrl };
           });
         });
     })
     .then(function(ctx) {
-      var bidData  = ctx.bidData;
-      var aspData  = ctx.aspData;
-      var epUrl    = ctx.epUrl;
+      var bidData = ctx.bidData;
+      var aspData = ctx.aspData;
+      var epUrl   = ctx.epUrl;
 
-      // Alternatif AJAX'tan stream dene
-      var ajaxPromise = (bidData && bidData.bid)
-        ? Promise.all([
-            fetchAlternatifler(bidData.bid, '0', aspData, bidData.cookies, epUrl).then(function(list) {
-              console.log('[SezonlukDizi] Dublaj alternatif: ' + list.length);
-              return Promise.all(list.map(function(v) { return processVeri(v, 'TR Dublaj', aspData); }));
-            }),
-            fetchAlternatifler(bidData.bid, '1', aspData, bidData.cookies, epUrl).then(function(list) {
-              console.log('[SezonlukDizi] Altyazı alternatif: ' + list.length);
-              return Promise.all(list.map(function(v) { return processVeri(v, 'TR Altyazı', aspData); }));
-            })
-          ]).then(function(all) { return all[0].concat(all[1]).filter(Boolean); })
-        : Promise.resolve([]);
+      if (!bidData || !bidData.bid) return [];
 
-      return ajaxPromise.then(function(streams) {
-        // AJAX boş geldiyse sayfadaki Sibnet linklerini kullan
-        if (streams.length === 0 && bidData && bidData.sibnetLinks && bidData.sibnetLinks.length > 0) {
-          console.log('[SezonlukDizi] AJAX boş, Sibnet fallback: ' + bidData.sibnetLinks.length + ' link');
-          return Promise.all(bidData.sibnetLinks.map(function(url) {
-            return fetchSibnetStream(url).then(function(s) {
-              if (!s) return null;
-              return {
-                url:     s.url,
-                quality: '1080p',
-                label:   'SezonlukDizi — Sibnet',
-                headers: { 'Referer': 'https://video.sibnet.ru/' }
-              };
-            });
-          })).then(function(results) { return results.filter(Boolean); });
-        }
-        return streams;
+      return Promise.all([
+        fetchAlternatifler(bidData.bid, '0', aspData, bidData.cookies, epUrl).then(function(list) {
+          console.log('[SezonlukDizi] Dublaj alternatif: ' + list.length);
+          return Promise.all(list.map(function(v) { return processVeri(v, 'TR Dublaj', aspData); }));
+        }),
+        fetchAlternatifler(bidData.bid, '1', aspData, bidData.cookies, epUrl).then(function(list) {
+          console.log('[SezonlukDizi] Altyazi alternatif: ' + list.length);
+          return Promise.all(list.map(function(v) { return processVeri(v, 'TR Altyazi', aspData); }));
+        })
+      ]).then(function(all) {
+        return all[0].concat(all[1]).filter(Boolean);
       });
     })
     .then(function(streams) {
