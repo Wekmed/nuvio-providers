@@ -77,7 +77,7 @@ function titleToSlug(title) {
     .replace(/^-+|-+$/g,'');
 }
 
-// ── Dizi sayfasının var olup olmadığını doğrula ───────────────
+// ── Dizi sayfasını doğrula ve gerçek slug'ı al ───────────────
 function validateShowPage(slug) {
   var url = BASE_URL + '/diziler/' + slug + '.html';
   return fetch(url, { headers: HEADERS })
@@ -85,12 +85,19 @@ function validateShowPage(slug) {
       console.log('[SezonlukDizi] Slug dene: ' + url + ' → ' + r.status);
       if (r.status === 404) return null;
       return r.text().then(function(html) {
-        // 404 sayfası değilse (yani gerçek bir dizi sayfasıysa) kabul et
-        if (html.indexOf('Sayfa Bulunamad') !== -1 || html.indexOf('404') !== -1 && html.length < 5000) {
+        if (html.indexOf('Sayfa Bulunamad') !== -1 || html.indexOf('Haydaaa') !== -1) {
           console.log('[SezonlukDizi] 404 içeriği: ' + url);
           return null;
         }
-        console.log('[SezonlukDizi] Dizi sayfası doğrulandı: ' + url);
+        // Bölüm linklerinden gerçek slug'ı çıkar
+        // örn: href="/Invincible/1-sezon-1-bolum.html" veya href="/breaking-bad/1-sezon-1-bolum.html"
+        var m = html.match(/href="\/([^\/]+)\/\d+-sezon-\d+-bolum\.html"/i);
+        if (m) {
+          var realSlug = m[1];
+          console.log('[SezonlukDizi] Gerçek slug: ' + realSlug);
+          return realSlug;
+        }
+        console.log('[SezonlukDizi] Dizi sayfası doğrulandı (bölüm linki yok): ' + slug);
         return slug;
       });
     })
@@ -130,7 +137,9 @@ function fetchBid(episodeUrl, sessionCookie) {
       if (!m) m = html.match(/data-id="([^"]+)"/);
       var bid = m ? m[1] : null;
       if (bid) console.log('[SezonlukDizi] bid: ' + bid);
-      else console.log('[SezonlukDizi] bid bulunamadı');
+      else {
+        console.log('[SezonlukDizi] bid bulunamadı — HTML snippet: ' + html.slice(0, 300).replace(/\s+/g, ' '));
+      }
 
       // Sibnet linklerini direkt HTML'den topla (fallback için)
       var sibnetLinks = [];
@@ -222,8 +231,39 @@ function fetchSibnetStream(sibnetUrl) {
       var vUrl = 'https://video.sibnet.ru' + m[1];
       console.log('[SezonlukDizi] Sibnet /v/ URL: ' + vUrl);
 
-      // /v/ URL'yi Referer ile döndür — Nuvio oynatırken header gönderir
-      return { url: vUrl, type: 'mp4', quality: '1080p', referer: shellUrl };
+      // /v/ URL'ye follow redirect ile istek at, son URL'yi al
+      return fetch(vUrl, {
+        redirect: 'follow',
+        headers: {
+          'User-Agent': HEADERS['User-Agent'],
+          'Referer': shellUrl,
+          'Range': 'bytes=0-'
+        }
+      }).then(function(r2) {
+        var finalUrl = r2.url || vUrl;
+        if (finalUrl && finalUrl !== vUrl) {
+          console.log('[SezonlukDizi] Sibnet CDN (follow): ' + finalUrl);
+          return { url: finalUrl, type: 'mp4', quality: '1080p' };
+        }
+        // response.url gelmediyse manuel redirect dene
+        return fetch(vUrl, {
+          redirect: 'manual',
+          headers: {
+            'User-Agent': HEADERS['User-Agent'],
+            'Referer': shellUrl,
+            'Range': 'bytes=0-'
+          }
+        }).then(function(r3) {
+          var loc = r3.headers.get('location');
+          if (loc) {
+            if (loc.indexOf('//') === 0) loc = 'https:' + loc;
+            console.log('[SezonlukDizi] Sibnet CDN (manual): ' + loc);
+            return { url: loc, type: 'mp4', quality: '1080p' };
+          }
+          console.log('[SezonlukDizi] Sibnet redirect alınamadı, /v/ döndürülüyor');
+          return { url: vUrl, type: 'mp4', quality: '1080p', referer: shellUrl };
+        });
+      });
     })
     .catch(function(e) {
       console.log('[SezonlukDizi] Sibnet hata: ' + e.message);
