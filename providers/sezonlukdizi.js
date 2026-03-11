@@ -68,53 +68,39 @@ function normalizeStr(str) {
     .replace(/[^a-z0-9]/g,'');
 }
 
-// ── Dizi arama ────────────────────────────────────────────────
-function searchShow(title) {
-  var url = BASE_URL + '/diziler.asp?adi=' + encodeURIComponent(title);
-  return fetch(url, { headers: HEADERS })
-    .then(function(r) { return r.text(); })
-    .then(function(html) {
-      var results = [];
-      var re = /href="([^"]+)"[^>]*>\s*<[^>]+>\s*<[^>]+>\s*<[^>]+>([^<]+)/g;
-      var m;
-      while ((m = re.exec(html)) !== null) {
-        if (m[1].indexOf('/dizi/') !== -1 || m[1].match(/\.html/)) {
-          results.push({ href: m[1], title: m[2].trim() });
-        }
-      }
-      // Fallback: tüm /dizi/ linklerini topla
-      if (results.length === 0) {
-        var re2 = /href="(\/dizi\/[^"]+)"[^>]*title="([^"]+)"/g;
-        while ((m = re2.exec(html)) !== null) {
-          results.push({ href: m[1], title: m[2].trim() });
-        }
-      }
-      console.log('[SezonlukDizi] Arama "' + title + '": ' + results.length + ' sonuç');
-      return results;
-    });
+// ── Title → slug ──────────────────────────────────────────────
+function titleToSlug(title) {
+  return (title || '').toLowerCase()
+    .replace(/ğ/g,'g').replace(/ü/g,'u').replace(/ş/g,'s')
+    .replace(/ı/g,'i').replace(/İ/g,'i').replace(/ö/g,'o').replace(/ç/g,'c')
+    .replace(/[^a-z0-9]+/g,'-')
+    .replace(/^-+|-+$/g,'');
 }
 
-function findBestMatch(results, titleEn, titleTr) {
-  var normEn = normalizeStr(titleEn);
-  var normTr = normalizeStr(titleTr);
-  for (var i = 0; i < results.length; i++) {
-    var t = normalizeStr(results[i].title);
-    if (t === normEn || t === normTr) return results[i].href;
-  }
-  for (var j = 0; j < results.length; j++) {
-    var t2 = normalizeStr(results[j].title);
-    if (t2.indexOf(normEn) !== -1 || t2.indexOf(normTr) !== -1) return results[j].href;
-  }
-  return results.length > 0 ? results[0].href : null;
+// ── Dizi sayfasının var olup olmadığını doğrula ───────────────
+function validateShowPage(slug) {
+  var url = BASE_URL + '/diziler/' + slug + '.html';
+  return fetch(url, { headers: HEADERS })
+    .then(function(r) {
+      console.log('[SezonlukDizi] Slug dene: ' + url + ' → ' + r.status);
+      if (r.status === 404) return null;
+      return r.text().then(function(html) {
+        // 404 sayfası değilse (yani gerçek bir dizi sayfasıysa) kabul et
+        if (html.indexOf('Sayfa Bulunamad') !== -1 || html.indexOf('404') !== -1 && html.length < 5000) {
+          console.log('[SezonlukDizi] 404 içeriği: ' + url);
+          return null;
+        }
+        console.log('[SezonlukDizi] Dizi sayfası doğrulandı: ' + url);
+        return slug;
+      });
+    })
+    .catch(function(e) { console.log('[SezonlukDizi] validateShowPage hata: ' + e.message); return null; });
 }
 
 // ── Bölüm URL oluştur ─────────────────────────────────────────
-function buildEpisodeUrl(showUrl, season, episode) {
-  // showUrl örn: https://sezonlukdizi8.com/paradise
-  // Hedef: https://sezonlukdizi8.com/paradise/2-sezon-5-bolum.html
-  var base = showUrl.replace(/\/$/, '').replace(/\.html?$/i, '');
-  // Dizi slug: son path parçası
-  var slug = base.split('/').pop();
+function buildEpisodeUrl(showHref, season, episode) {
+  // showHref örn: /diziler/breaking-bad.html veya https://sezonlukdizi.cc/diziler/breaking-bad.html
+  var slug = showHref.replace(BASE_URL, '').replace('/diziler/', '').replace('.html', '');
   var url = BASE_URL + '/' + slug + '/' + season + '-sezon-' + episode + '-bolum.html';
   console.log('[SezonlukDizi] Bölüm URL: ' + url);
   return url;
@@ -220,10 +206,8 @@ function fetchEmbedIframe(embedId, aspData) {
 
 // ── Sibnet extractor ──────────────────────────────────────────
 function fetchSibnetStream(sibnetUrl) {
-  // sibnetUrl: http://video.sibnet.ru/video5520877
-  // shell URL: https://video.sibnet.ru/shell.php?videoid=5520877
-  var videoId = (sibnetUrl.match(/video(\d+)/) || [])[1];
-  if (!videoId) return Promise.resolve(null);
+  var videoId = (sibnetUrl.match(/videoid=(\d+)/) || sibnetUrl.match(/video(\d+)/) || [])[1];
+  if (!videoId) { console.log('[SezonlukDizi] Sibnet videoId bulunamadı: ' + sibnetUrl); return Promise.resolve(null); }
   var shellUrl = 'https://video.sibnet.ru/shell.php?videoid=' + videoId;
   console.log('[SezonlukDizi] Sibnet shell: ' + shellUrl);
 
@@ -232,16 +216,30 @@ function fetchSibnetStream(sibnetUrl) {
   })
     .then(function(r) { return r.text(); })
     .then(function(html) {
-      // player.src([{src: "/v/HASH/video.mp4", type:"video/mp4"}])
       var m = html.match(/player\.src\s*\(\s*\[\s*\{\s*src\s*:\s*"(\/v\/[^"]+\.mp4[^"]*)"/i);
       if (!m) m = html.match(/src\s*:\s*"(\/v\/[^"]+\.mp4[^"]*)"/i);
-      if (!m) {
-        console.log('[SezonlukDizi] Sibnet mp4 bulunamadı');
-        return null;
-      }
-      var mp4Url = 'https://video.sibnet.ru' + m[1];
-      console.log('[SezonlukDizi] Sibnet mp4: ' + mp4Url);
-      return { url: mp4Url, type: 'mp4', quality: '1080p' };
+      if (!m) { console.log('[SezonlukDizi] Sibnet /v/ URL bulunamadı'); return null; }
+      var vUrl = 'https://video.sibnet.ru' + m[1];
+      console.log('[SezonlukDizi] Sibnet /v/ URL: ' + vUrl);
+
+      // /v/ URL'ye manuel istek at, 302 Location header'ını al
+      return fetch(vUrl, {
+        redirect: 'manual',
+        headers: {
+          'User-Agent': HEADERS['User-Agent'],
+          'Referer': shellUrl,
+          'Range': 'bytes=0-'
+        }
+      }).then(function(r2) {
+        var loc = r2.headers.get('location');
+        if (loc) {
+          if (loc.indexOf('//') === 0) loc = 'https:' + loc;
+          console.log('[SezonlukDizi] Sibnet CDN: ' + loc);
+          return { url: loc, type: 'mp4', quality: '1080p' };
+        }
+        console.log('[SezonlukDizi] Sibnet redirect yok, /v/ URL kullanılıyor');
+        return { url: vUrl, type: 'mp4', quality: '1080p' };
+      });
     })
     .catch(function(e) {
       console.log('[SezonlukDizi] Sibnet hata: ' + e.message);
@@ -273,6 +271,11 @@ function fetchStreamFromIframe(src) {
 
 // ── Bir alternatifi işle ──────────────────────────────────────
 function processVeri(veri, dilAd, aspData) {
+  // Sadece Sibnet işle (mp4 garantili), diğerleri m3u8 veya erişilemiyor
+  var baslik = (veri.baslik || '').toLowerCase();
+  if (baslik !== 'sibnet') {
+    return Promise.resolve(null);
+  }
   return fetchEmbedIframe(veri.id, aspData)
     .then(function(src) {
       if (!src) return null;
@@ -303,19 +306,20 @@ function getStreams(tmdbId, mediaType, season, episode) {
       var aspData   = init[2];
       console.log('[SezonlukDizi] TMDB: "' + info.titleEn + '" / "' + info.titleTr + '"');
 
-      return searchShow(info.titleEn)
-        .then(function(r1) {
-          var url = findBestMatch(r1, info.titleEn, info.titleTr);
-          if (url) return url;
-          return searchShow(info.titleTr).then(function(r2) {
-            return findBestMatch(r2, info.titleEn, info.titleTr);
-          });
+      var slugEn = titleToSlug(info.titleEn);
+      var slugTr = titleToSlug(info.titleTr);
+      console.log('[SezonlukDizi] Slug EN: ' + slugEn + ' | TR: ' + slugTr);
+
+      return validateShowPage(slugEn)
+        .then(function(found) {
+          if (found) return found;
+          if (slugTr !== slugEn) return validateShowPage(slugTr);
+          return null;
         })
-        .then(function(showUrl) {
-          if (!showUrl) throw new Error('Dizi bulunamadı');
-          if (showUrl.indexOf('http') !== 0) showUrl = BASE_URL + showUrl;
-          console.log('[SezonlukDizi] Dizi URL: ' + showUrl);
-          var epUrl = buildEpisodeUrl(showUrl, season, episode);
+        .then(function(slug) {
+          if (!slug) throw new Error('Dizi bulunamadı: ' + slugEn);
+          var epUrl = BASE_URL + '/' + slug + '/' + season + '-sezon-' + episode + '-bolum.html';
+          console.log('[SezonlukDizi] Bölüm URL: ' + epUrl);
           return fetchBid(epUrl, cookie).then(function(bidData) {
             return { bidData: bidData, aspData: aspData, epUrl: epUrl };
           });
