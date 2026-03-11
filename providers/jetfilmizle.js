@@ -1,5 +1,8 @@
 // ============================================================
 //  JetFilmizle — Nuvio Provider
+//  CloudStream (Kotlin) → Nuvio (JavaScript) port
+//  Kaynak: JetFilmizle.kt by @keyiflerolsun / @KekikAkademi
+//  Sadece Film (movie) destekler
 // ============================================================
 
 var BASE_URL     = 'https://jetfilmizle.net';
@@ -104,23 +107,90 @@ function searchFallback(titleTr, titleEn) {
     });
 }
 
+function fetchJetplayer(filmId, sourceIndex) {
+  var body = 'film_id=' + filmId + '&source_index=' + sourceIndex + '&player_type=dublaj';
+  return fetch('https://jetfilmizle.net/jetplayer', {
+    method: 'POST',
+    headers: Object.assign({}, HEADERS, {
+      'Content-Type':     'application/x-www-form-urlencoded',
+      'X-Requested-With': 'XMLHttpRequest',
+      'Referer':          'https://jetfilmizle.net/'
+    }),
+    body: body
+  })
+    .then(function(r) { return r.text(); })
+    .then(function(html) {
+      var m = html.match(/src=['\"](https?:\/\/jetcdn\.org\/gold\/[^'"]+)['"]/);
+      return m ? m[1] : null;
+    })
+    .catch(function() { return null; });
+}
+
+function fetchGoldStreams(goldIframeSrc) {
+  var idMatch = goldIframeSrc.match(/[?&]id=(\d+)/);
+  if (!idMatch) return Promise.resolve([]);
+  var goldId = idMatch[1];
+  var t = Date.now();
+  var url = 'https://jetcdn.org/gold/stream.php?id=' + goldId + '&t=' + t;
+  console.log('[JetFilmizle] Gold stream: ' + url);
+  return fetch(url, {
+    headers: Object.assign({}, HEADERS, {
+      'Referer': goldIframeSrc,
+      'Origin':  'https://jetcdn.org'
+    })
+  })
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) {
+      if (!data || !data.success || !Array.isArray(data.formats)) return [];
+      var streams = [];
+      data.formats.forEach(function(f) {
+        if (f.url && f.mimeType && f.mimeType.indexOf('mp4') !== -1) {
+          streams.push({
+            url:     f.url,
+            quality: f.quality || 'Auto',
+            label:   'JetFilmizle — Gold ' + (f.quality || 'Auto'),
+            headers: { 'Referer': 'https://jetcdn.org/' }
+          });
+          console.log('[JetFilmizle] Gold: ' + f.quality + ' | ' + f.size);
+        }
+      });
+      return streams;
+    })
+    .catch(function(e) {
+      console.log('[JetFilmizle] Gold hata: ' + e.message);
+      return [];
+    });
+}
+
 function fetchFilmLinks(filmUrl) {
   return fetch(filmUrl, { headers: HEADERS })
     .then(function(r) { return r.text(); })
     .then(function(html) {
+      // film_id parse et (Gold kaynağı için)
+      var filmIdMatch = html.match(/name=["']film_id["'][^>]*value=["'](\d+)["']/) || html.match(/value=["'](\d+)["'][^>]*name=["']film_id["']/);
+      var filmId = filmIdMatch ? filmIdMatch[1] : null;
+      console.log('[JetFilmizle] film_id: ' + filmId);
+
       var links = [];
+
+      // Gold kaynağı varsa ekle
+      if (filmId) links.push({ type: 'gold', filmId: filmId, sourceIndex: 3 });
+
+      // Pixeldrain linkleri
       var dlRe = /href="(https?:\/\/pixeldrain\.com\/u\/[^"]+)"/g;
       var m;
       while ((m = dlRe.exec(html)) !== null) {
         links.push({ type: 'pixeldrain', url: m[1] });
         console.log('[JetFilmizle] Pixeldrain: ' + m[1]);
       }
+
       var ifRe = /<iframe[^>]+(?:src|data-src)="([^"]*(?:jetv|d2rs|vidmoly|mlycdn)[^"]*)"/gi;
       var im;
       while ((im = ifRe.exec(html)) !== null) {
         links.push({ type: 'iframe', url: im[1] });
         console.log('[JetFilmizle] iframe: ' + im[1]);
       }
+
       console.log('[JetFilmizle] Toplam link: ' + links.length);
       return links;
     });
@@ -190,10 +260,11 @@ function getStreams(tmdbId, mediaType, season, episode) {
       return fetchFilmLinks(filmUrl);
     })
     .then(function(links) {
-      var pdLinks = links.filter(function(l) { return l.type === 'pixeldrain'; });
-      var otherLinks = links.filter(function(l) { return l.type !== 'pixeldrain'; });
+      var pdLinks    = links.filter(function(l) { return l.type === 'pixeldrain'; });
+      var goldLinks  = links.filter(function(l) { return l.type === 'gold'; });
+      var otherLinks = links.filter(function(l) { return l.type !== 'pixeldrain' && l.type !== 'gold'; });
 
-      // Tüm pixeldrain linklerinin boyutunu çek, büyükten küçüğe sırala
+      // Duplicate hash kontrolü ile pixeldrain linklerini işle
       var pdPromise = Promise.all(pdLinks.map(function(link) {
         var fileId = link.url.split('/u/').pop().split('?')[0];
         return fetch('https://pixeldrain.com/api/file/' + fileId + '/info')
@@ -202,17 +273,22 @@ function getStreams(tmdbId, mediaType, season, episode) {
             return {
               url:  link.url,
               size: (info && info.size) || 0,
-              name: (info && info.name) || ''
+              name: (info && info.name) || '',
+              hash: (info && info.hash_sha256) || fileId
             };
           })
-          .catch(function() { return { url: link.url, size: 0, name: '' }; });
+          .catch(function() { return { url: link.url, size: 0, name: '', hash: '' }; });
       })).then(function(pdInfos) {
+        // Aynı hash = aynı dosya, duplicate'leri çıkar
+        var seen = {}, unique = [];
+        pdInfos.forEach(function(info) {
+          if (!seen[info.hash]) { seen[info.hash] = true; unique.push(info); }
+        });
         // Boyuta göre büyükten küçüğe sırala
-        pdInfos.sort(function(a, b) { return b.size - a.size; });
+        unique.sort(function(a, b) { return b.size - a.size; });
         var qualities = ['1080p', '720p', '480p', '360p'];
-        return pdInfos.map(function(info, idx) {
+        return unique.map(function(info, idx) {
           var fileId = info.url.split('/u/').pop().split('?')[0];
-          // Dosya adında kalite bilgisi varsa onu kullan, yoksa sıraya göre ata
           var quality;
           if      (/2160p|4k/i.test(info.name))  quality = '4K';
           else if (/1080p/i.test(info.name))      quality = '1080p';
@@ -235,6 +311,14 @@ function getStreams(tmdbId, mediaType, season, episode) {
           promises.push(fetchIframeStream(link.url).then(function(s) { if (s) streams.push(s); }));
         }
       });
+      // Gold streams
+      goldLinks.forEach(function(link) {
+        promises.push(fetchJetplayer(link.filmId, link.sourceIndex).then(function(iframeSrc) {
+          if (!iframeSrc) return;
+          return fetchGoldStreams(iframeSrc).then(function(ss) { ss.forEach(function(s) { streams.push(s); }); });
+        }));
+      });
+
       return Promise.all(promises).then(function() { return streams; });
     })
     .then(function(streams) {
