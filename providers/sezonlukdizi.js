@@ -222,24 +222,8 @@ function fetchSibnetStream(sibnetUrl) {
       var vUrl = 'https://video.sibnet.ru' + m[1];
       console.log('[SezonlukDizi] Sibnet /v/ URL: ' + vUrl);
 
-      // /v/ URL'ye manuel istek at, 302 Location header'ını al
-      return fetch(vUrl, {
-        redirect: 'manual',
-        headers: {
-          'User-Agent': HEADERS['User-Agent'],
-          'Referer': shellUrl,
-          'Range': 'bytes=0-'
-        }
-      }).then(function(r2) {
-        var loc = r2.headers.get('location');
-        if (loc) {
-          if (loc.indexOf('//') === 0) loc = 'https:' + loc;
-          console.log('[SezonlukDizi] Sibnet CDN: ' + loc);
-          return { url: loc, type: 'mp4', quality: '1080p' };
-        }
-        console.log('[SezonlukDizi] Sibnet redirect yok, /v/ URL kullanılıyor');
-        return { url: vUrl, type: 'mp4', quality: '1080p' };
-      });
+      // /v/ URL'yi Referer ile döndür — Nuvio oynatırken header gönderir
+      return { url: vUrl, type: 'mp4', quality: '1080p', referer: shellUrl };
     })
     .catch(function(e) {
       console.log('[SezonlukDizi] Sibnet hata: ' + e.message);
@@ -288,7 +272,7 @@ function processVeri(veri, dilAd, aspData) {
         url:     stream.url,
         quality: stream.quality || (veri.kalite ? veri.kalite + 'p' : 'Auto'),
         label:   'SezonlukDizi — ' + dilAd + ' ' + (veri.baslik || ''),
-        headers: { 'Referer': BASE_URL + '/' }
+        headers: { 'Referer': stream.referer || 'https://video.sibnet.ru/' }
       };
     })
     .catch(function() { return null; });
