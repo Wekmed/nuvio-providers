@@ -52,16 +52,16 @@
     {
   "id": "filmmodu",
   "name": "FilmModu",
-  "description": "Türkçe dublaj ve altyazılı full HD filmler.",
+  "description": "Türkçe dublaj ve altyazılı full HD filmler. filmmodu.ws üzerinden stream sağlar.",
   "version": "1.0.0",
-  "author": "senin-adin",
+  "author": "port: @keyiflerolsun / nuvio: sen",
   "supportedTypes": ["movie"],
   "filename": "providers/filmmodu.js",
   "enabled": true,
   "logo": "https://filmmodu.rip/wp-content/uploads/2023/07/logo.png",
   "contentLanguage": ["tr"],
-  "formats": ["mkv", "mp4"],
-  "limited": false
+  "limited": false,
+  "disabledPlatforms": []
 },
    {
   "id": "dizipal",
