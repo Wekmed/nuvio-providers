@@ -124,24 +124,16 @@ function fetchJetplayerIndex(filmId, sourceIndex) {
 }
 
 function fetchAllJetplayers(filmId) {
-  // Önce Gold (index 3) dene, varsa sadece onu döndür
-  return fetchJetplayerIndex(filmId, 3).then(function(goldSrc) {
-    if (goldSrc && goldSrc.indexOf('jetcdn.org') !== -1) {
-      console.log('[JetFilmizle] jetplayer[3]: ' + goldSrc);
-      return [goldSrc];
-    }
-    // Gold yoksa: VidMoly(4) + Apollo/d2rs(1) dene, jetvid/vk/streamtape atla
-    var indices = [4, 1];
-    return Promise.all(indices.map(function(idx) {
-      return fetchJetplayerIndex(filmId, idx).then(function(iframeSrc) {
-        if (!iframeSrc) return null;
-        console.log('[JetFilmizle] jetplayer[' + idx + ']: ' + iframeSrc);
-        return iframeSrc;
-      });
-    })).then(function(results) {
-      if (goldSrc) results.unshift(goldSrc);
-      return results.filter(Boolean);
+  // Gold(3) + VidMoly(4) + Apollo(1) paralel dene
+  var indices = [3, 4, 1];
+  return Promise.all(indices.map(function(idx) {
+    return fetchJetplayerIndex(filmId, idx).then(function(iframeSrc) {
+      if (!iframeSrc) return null;
+      console.log('[JetFilmizle] jetplayer[' + idx + ']: ' + iframeSrc);
+      return iframeSrc;
     });
+  })).then(function(results) {
+    return results.filter(Boolean);
   });
 }
 
@@ -276,6 +268,52 @@ function fetchIframeStream(iframeUrl) {
 
   // jetvid.top atla
   if (iframeUrl.indexOf('jetvid.top') !== -1) return Promise.resolve(null);
+
+  // Apollo (d2rs.com/apollo)
+  if (iframeUrl.indexOf('d2rs.com/apollo') !== -1) {
+    var apolloId = (iframeUrl.match(/[?&]id=(\d+)/) || [])[1];
+    if (!apolloId) return Promise.resolve(null);
+    var apolloBase = 'https://d2rs.com/apollo';
+    return fetch(apolloBase + '/get_video.php?id=' + apolloId, {
+      headers: Object.assign({}, HEADERS, { 'Referer': 'https://d2rs.com/' })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.success || !data.masterUrl) return null;
+      console.log('[JetFilmizle] Apollo masterUrl: ' + data.masterUrl);
+      var body = 'url=' + encodeURIComponent(data.masterUrl) + '&referrer=' + encodeURIComponent(data.referrerUrl || '');
+      return fetch(apolloBase + '/api.php', {
+        method: 'POST',
+        headers: Object.assign({}, HEADERS, {
+          'Referer':      'https://d2rs.com/apollo/?id=' + apolloId,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-Requested-With': 'XMLHttpRequest'
+        }),
+        body: body
+      });
+    })
+    .then(function(r) {
+      if (!r) return null;
+      // Response bir proxy URL'si — direkt m3u8
+      return r.text().then(function(text) {
+        // "api.php?proxy=BASE64&ref=BASE64" formatında geliyor
+        var proxyUrl = text.trim();
+        if (proxyUrl.indexOf('proxy=') !== -1) {
+          proxyUrl = 'https://d2rs.com/apollo/' + proxyUrl;
+        }
+        console.log('[JetFilmizle] Apollo proxy: ' + proxyUrl);
+        return {
+          url:     proxyUrl,
+          name:    'TR Dublaj',
+          title:   'Apollo',
+          quality: 'Auto',
+          type:    'hls',
+          headers: { 'Referer': 'https://d2rs.com/' }
+        };
+      });
+    })
+    .catch(function(e) { console.log('[JetFilmizle] Apollo hata: ' + e.message); return null; });
+  }
 
   return fetch(iframeUrl, { headers: Object.assign({}, HEADERS, { 'Referer': BASE_URL + '/' }) })
     .then(function(r) { return r.text(); })
