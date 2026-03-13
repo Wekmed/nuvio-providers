@@ -216,51 +216,31 @@ function fetchStreamsFromAlt(altLink, filmUrl) {
               : BASE_URL + data.subtitle;
           }
 
-          return Promise.all(data.sources.map(function(source) {
-            if (!source.src) return Promise.resolve(null);
-
-            var qualityLabel = source.label || 'HD';
-
-            // Redirect zincirini takip et
-            return fetch(source.src, {
-              method: 'HEAD',
-              headers: HEADERS,
-              redirect: 'follow'
-            })
-            .then(function(r) {
-              var finalUrl = r.url || source.src;
-              console.log('[FilmModu] Redirect -> ' + finalUrl);
-              return finalUrl;
-            })
-            .catch(function() { return source.src; })
-            .then(function(finalUrl) {
-              var streamObj = {
-                name:     'FilmModu',
-                title:    altLink.name + ' • ' + qualityLabel,
-                url:      finalUrl,
-                quality:  qualityLabel,
-                type:     'direct',
-                headers: {
-                  'Referer':    BASE_URL + '/',
-                  'User-Agent': HEADERS['User-Agent']
-                }
-              };
-
-              if (subtitleUrl) {
-                streamObj.subtitles = [{
-                  url:      subtitleUrl,
-                  language: 'Türkçe',
-                  label:    'Türkçe'
-                }];
+          data.sources.forEach(function(source) {
+            if (!source.src) return;
+            var qualityLabel = source.label || source.res ? (source.res + 'p') : 'HD';
+            var streamObj = {
+              name:    'FilmModu',
+              title:   altLink.name + ' • ' + qualityLabel,
+              url:     source.src,
+              quality: qualityLabel,
+              type:    'hls',
+              headers: {
+                'Referer':    BASE_URL + '/',
+                'User-Agent': HEADERS['User-Agent']
               }
-
-              console.log('[FilmModu] Stream eklendi: ' + altLink.name + ' | ' + qualityLabel + ' | ' + finalUrl);
-              return streamObj;
-            });
-          })).then(function(results) {
-            results.forEach(function(s) { if (s) streams.push(s); });
-            return streams;
+            };
+            if (subtitleUrl) {
+              streamObj.subtitles = [{
+                url:      subtitleUrl,
+                language: 'Türkçe',
+                label:    'Türkçe'
+              }];
+            }
+            streams.push(streamObj);
+            console.log('[FilmModu] Stream: ' + qualityLabel + ' | ' + source.src);
           });
+          return streams;
         })
         .catch(function(err) {
           console.error('[FilmModu] get-source hatası (' + altLink.name + '): ' + err.message);
