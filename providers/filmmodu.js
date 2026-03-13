@@ -5,7 +5,7 @@
 //  Sadece Film (movie) destekler
 // ============================================================
 
-var BASE_URL = 'https://www.filmmodu.nl';
+var BASE_URL = 'https://www.filmmodu.ws';
 var TMDB_API_KEY = '500330721680edb6d5f7f12ba7cd9023';
 
 var HEADERS = {
