@@ -219,10 +219,13 @@ function fetchStreamsFromAlt(altLink, filmUrl) {
           data.sources.forEach(function(source) {
             if (!source.src) return;
             var qualityLabel = source.label || source.res ? (source.res + 'p') : 'HD';
+            // m3u8 uzantısı yoksa ekle
+            var srcUrl = source.src;
+            if (srcUrl.indexOf('.m3u8') === -1) srcUrl = srcUrl + '.m3u8';
             var streamObj = {
               name:    'FilmModu',
               title:   altLink.name + ' • ' + qualityLabel,
-              url:     source.src,
+              url:     srcUrl,
               quality: qualityLabel,
               type:    'hls',
               headers: {
