@@ -5,7 +5,7 @@
 //  Sadece Film (movie) destekler
 // ============================================================
 
-var BASE_URL = 'https://www.filmmodu.ws';
+var BASE_URL = 'https://www.filmmodu.nl';
 var TMDB_API_KEY = '500330721680edb6d5f7f12ba7cd9023';
 
 var HEADERS = {
@@ -149,8 +149,8 @@ function fetchAlternateLinks(filmUrl) {
       $('div.alternates a').each(function() {
         var href = $(this).attr('href') || '';
         var name = $(this).text().trim();
-        // Fragman linklerini atla
-        if (name && name !== 'Fragman' && href) {
+        // Fragman ve Türkçe Dublaj linklerini atla, sadece Türkçe Altyazılı al
+        if (name && name !== 'Fragman' && name !== 'Türkçe Altyazılı' && href) {
           links.push({ href: href, name: name });
         }
       });
@@ -208,21 +208,48 @@ function fetchStreamsFromAlt(altLink, filmUrl) {
             console.log('[FilmModu] Altyazı mevcut: ' + data.subtitle);
           }
 
+          // Altyazı URL'ini tam adrese çevir
+          var subtitleUrl = null;
+          if (data.subtitle) {
+            subtitleUrl = data.subtitle.startsWith('http')
+              ? data.subtitle
+              : BASE_URL + data.subtitle;
+          }
+
           data.sources.forEach(function(source) {
             if (!source.src) return;
 
+            // Sadece mp4 destekleniyor (mkv = HEVC codec sorunu)
+            var srcLower = source.src.toLowerCase();
+            if (srcLower.indexOf('.mkv') !== -1) {
+              console.log('[FilmModu] mkv atlandi: ' + source.src);
+              return;
+            }
+
             var qualityLabel = source.label || 'HD';
 
-            streams.push({
-              name:    'FilmModu',
-              title:   altLink.name + ' • ' + qualityLabel,
-              url:     source.src,
-              quality: qualityLabel,
+            var streamObj = {
+              name:     'FilmModu',
+              title:    altLink.name + ' • ' + qualityLabel,
+              url:      source.src,
+              quality:  qualityLabel,
+              type:     'direct',
               headers: {
                 'Referer':    BASE_URL + '/',
                 'User-Agent': HEADERS['User-Agent']
               }
-            });
+            };
+
+            // Altyazı varsa ekle
+            if (subtitleUrl) {
+              streamObj.subtitles = [{
+                url:      subtitleUrl,
+                language: 'Türkçe',
+                label:    'Türkçe'
+              }];
+            }
+
+            streams.push(streamObj);
 
             console.log('[FilmModu] Stream eklendi: ' + altLink.name + ' | ' + qualityLabel + ' | ' + source.src);
           });
@@ -284,6 +311,34 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
               // Tüm kaynak linklerini paralel işle
               var promises = altLinks.map(function(alt) {
                 return fetchStreamsFromAlt(alt, filmUrl);
+              });
+
+              return Promise.all(promises).then(function(results) {
+                var allStreams = [];
+                results.forEach(function(arr) {
+                  if (arr && arr.length > 0) {
+                    arr.forEach(function(s) { allStreams.push(s); });
+                  }
+                });
+                console.log('[FilmModu] Toplam stream: ' + allStreams.length);
+                return allStreams;
+              });
+            });
+        });
+    })
+    .catch(function(err) {
+      console.error('[FilmModu] Genel hata: ' + err.message);
+      return [];
+    });
+}
+
+// ── Export ───────────────────────────────────────────────────
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { getStreams };
+} else {
+  global.getStreams = getStreams;
+                                                }
+Url);
               });
 
               return Promise.all(promises).then(function(results) {
