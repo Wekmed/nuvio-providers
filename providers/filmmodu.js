@@ -337,32 +337,4 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = { getStreams };
 } else {
   global.getStreams = getStreams;
-                                                }
-Url);
-              });
-
-              return Promise.all(promises).then(function(results) {
-                var allStreams = [];
-                results.forEach(function(arr) {
-                  if (arr && arr.length > 0) {
-                    arr.forEach(function(s) { allStreams.push(s); });
-                  }
-                });
-                console.log('[FilmModu] Toplam stream: ' + allStreams.length);
-                return allStreams;
-              });
-            });
-        });
-    })
-    .catch(function(err) {
-      console.error('[FilmModu] Genel hata: ' + err.message);
-      return [];
-    });
-}
-
-// ── Export ───────────────────────────────────────────────────
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { getStreams };
-} else {
-  global.getStreams = getStreams;
 }
