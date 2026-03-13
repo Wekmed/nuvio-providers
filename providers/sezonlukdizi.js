@@ -201,23 +201,59 @@ function fetchSibnetStream(sibnetUrl) {
     });
 }
 
+function fetchVidMolyStream(iframeUrl) {
+  var fullUrl = iframeUrl.startsWith('//') ? 'https:' + iframeUrl : iframeUrl;
+  return fetch(fullUrl, {
+    headers: Object.assign({}, HEADERS, { 'Referer': BASE_URL + '/' })
+  })
+  .then(function(r) { return r.text(); })
+  .then(function(html) {
+    var m = html.match(/(https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*)/i);
+    if (!m) { console.log('[SezonlukDizi] VidMoly m3u8 bulunamadi'); return null; }
+    console.log('[SezonlukDizi] VidMoly m3u8: ' + m[1]);
+    return { url: m[1], type: 'hls', referer: fullUrl };
+  })
+  .catch(function(e) { console.log('[SezonlukDizi] VidMoly hata: ' + e.message); return null; });
+}
+
 function processVeri(veri, dilAd, aspData) {
-  if ((veri.baslik || '').toLowerCase() !== 'sibnet') return Promise.resolve(null);
+  var baslik = (veri.baslik || '').toLowerCase();
+
+  // Pixel ve Netu atliyoruz
+  if (baslik === 'pixel' || baslik === 'netu') return Promise.resolve(null);
 
   return fetchEmbedIframe(veri.id, aspData)
     .then(function(src) {
-      if (!src || src.indexOf('sibnet.ru') === -1) return null;
-      console.log('[SezonlukDizi] iframe: ' + src);
-      return fetchSibnetStream(src);
-    })
-    .then(function(stream) {
-      if (!stream) return null;
-      return {
-        url:     stream.url,
-        quality: '1080p',
-        label:   'SezonlukDizi — ' + dilAd + ' Sibnet',
-        headers: { 'Referer': stream.referer || 'https://video.sibnet.ru/' }
-      };
+      if (!src) return null;
+      console.log('[SezonlukDizi] iframe (' + veri.baslik + '): ' + src);
+
+      if (src.indexOf('sibnet.ru') !== -1) {
+        return fetchSibnetStream(src).then(function(stream) {
+          if (!stream) return null;
+          return {
+            url:     stream.url,
+            quality: '1080p',
+            type:    'hls',
+            label:   'SezonlukDizi — ' + dilAd + ' Sibnet',
+            headers: { 'Referer': stream.referer || 'https://video.sibnet.ru/' }
+          };
+        });
+      }
+
+      if (src.indexOf('vidmoly') !== -1) {
+        return fetchVidMolyStream(src).then(function(stream) {
+          if (!stream) return null;
+          return {
+            url:     stream.url,
+            quality: veri.kalite === '4' ? '1080p' : veri.kalite === '3' ? '720p' : 'Auto',
+            type:    'hls',
+            label:   'SezonlukDizi — ' + dilAd + ' VidMoly',
+            headers: { 'Referer': 'https://vidmoly.net/' }
+          };
+        });
+      }
+
+      return null;
     })
     .catch(function() { return null; });
 }
