@@ -232,9 +232,10 @@ function processVeri(veri, dilAd, aspData) {
           if (!stream) return null;
           return {
             url:     stream.url,
+            name:    dilAd,
+            title:   'Sibnet',
             quality: '1080p',
             type:    'hls',
-            label:   'SezonlukDizi — ' + dilAd + ' Sibnet',
             headers: { 'Referer': stream.referer || 'https://video.sibnet.ru/' }
           };
         });
@@ -245,9 +246,10 @@ function processVeri(veri, dilAd, aspData) {
           if (!stream) return null;
           return {
             url:     stream.url,
-            quality: veri.kalite === '4' ? '1080p' : veri.kalite === '3' ? '720p' : 'Auto',
+            name:    dilAd,
+            title:   'VidMoly',
+            quality: 'Auto',
             type:    'hls',
-            label:   'SezonlukDizi — ' + dilAd + ' VidMoly',
             headers: { 'Referer': 'https://vidmoly.net/' }
           };
         });
