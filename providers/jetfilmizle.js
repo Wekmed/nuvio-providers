@@ -125,7 +125,7 @@ function fetchJetplayerIndex(filmId, sourceIndex) {
 
 function fetchAllJetplayers(filmId) {
   // Gold(3) + VidMoly(4) + Apollo(1) paralel dene
-  var indices = [3, 4, 1];
+  var indices = [3, 4];
   return Promise.all(indices.map(function(idx) {
     return fetchJetplayerIndex(filmId, idx).then(function(iframeSrc) {
       if (!iframeSrc) return null;
