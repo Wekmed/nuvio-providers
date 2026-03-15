@@ -63,18 +63,6 @@
   "limited": false,
   "disabledPlatforms": []
 },
-   {
-  "id": "dizipal",
-  "name": "DiziPal",
-  "description": "Türkçe dublaj ve altyazılı film ve diziler.",
-  "version": "1.0.0",
-  "supportedTypes": ["movie", "tv"],
-  "filename": "providers/dizipal.js",
-  "enabled": true,
-  "logo": "https://dizipal1542.com/favicon.ico",
-  "contentLanguage": ["tr"],
-  "formats": ["mp4", "mkv"]
-   },
     {
       "id": "animekai",
       "name": "AnimeKai",
