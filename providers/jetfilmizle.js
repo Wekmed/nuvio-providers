@@ -125,7 +125,7 @@ function fetchJetplayerIndex(filmId, sourceIndex) {
 
 function fetchAllJetplayers(filmId) {
   // Gold(3) + VidMoly(4) + Apollo(1) paralel dene
-  var indices = [3, 4];
+  var indices = [3, 4, 1];
   return Promise.all(indices.map(function(idx) {
     return fetchJetplayerIndex(filmId, idx).then(function(iframeSrc) {
       if (!iframeSrc) return null;
@@ -307,7 +307,6 @@ function fetchIframeStream(iframeUrl) {
           name:    'TR Dublaj',
           title:   'Apollo',
           quality: 'Auto',
-          type:    'hls',
           headers: { 'Referer': 'https://d2rs.com/' }
         };
       });
